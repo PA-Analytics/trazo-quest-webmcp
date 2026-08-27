@@ -29,6 +29,8 @@ import type {
   SubmitEvidenceDTO,
 } from './types.ts'
 import type { MethodologyGraph } from '../domain/methodology.ts'
+import { QuestValidationError } from '../domain/questValidation.ts'
+import { QuestService, type CreateQuestDTO } from './quest/questService.ts'
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -174,6 +176,7 @@ export interface ServerOptions {
   autonomyService?: AutonomyService
   autonomyAuditRepository?: IAutonomyAuditRepository
   methodologyService?: MethodologyService
+  questService?: QuestService
 }
 
 function sendJSON(
@@ -385,6 +388,7 @@ export function createRequestListener(
   let evaluator = options.evaluatorService
   let companion = options.companionService
   let autonomy = options.autonomyService
+  const questService = options.questService || new QuestService()
   const calibration = options.calibrationService
   const identity = options.identityService
   let runtime = options.aiRuntime
@@ -501,6 +505,54 @@ export function createRequestListener(
         }
         if (!identity && headerCoachId) return { coachId: headerCoachId, userId: headerUserId }
         return { coachId: undefined, userId: headerUserId }
+      }
+
+      // ─── QUEST ROUTES (WEBMCP NATIVE) ──────────────────────────────────
+      if (method === 'POST' && pathname === '/api/v1/quests') {
+        try {
+          const body = await parseBody<CreateQuestDTO>(req)
+          const quest = await questService.createQuest(body)
+          sendJSON(res, 201, quest)
+        } catch (err: unknown) {
+          if (err instanceof QuestValidationError) {
+            sendJSON(res, 400, { code: err.code, error: err.message })
+          } else {
+            const message = err instanceof Error ? err.message : String(err)
+            if (message.includes('INVALID_') || message.includes('EMPTY_') || message.includes('required')) {
+              sendJSON(res, 400, { code: 'INVALID_QUEST_PAYLOAD', error: message })
+            } else {
+              sendJSON(res, 503, { code: 'BACKEND_UNAVAILABLE', error: message })
+            }
+          }
+        }
+        return
+      }
+
+      const questMatch = pathname.match(/^\/api\/v1\/quests\/([^/]+)$/)
+      if (method === 'GET' && questMatch) {
+        const questId = questMatch[1]
+        const projectionQuery = url.searchParams.get('projection') === 'true'
+        try {
+          if (projectionQuery) {
+            const projection = await questService.getQuestStateProjection(questId)
+            if (!projection) {
+              sendJSON(res, 404, { code: 'QUEST_NOT_FOUND', error: `Quest "${questId}" was not found.` })
+              return
+            }
+            sendJSON(res, 200, projection)
+            return
+          }
+
+          const quest = await questService.getQuest(questId)
+          if (!quest) {
+            sendJSON(res, 404, { code: 'QUEST_NOT_FOUND', error: `Quest "${questId}" was not found.` })
+            return
+          }
+          sendJSON(res, 200, quest)
+        } catch (err: unknown) {
+          sendJSON(res, 500, { code: 'SERVER_ERROR', error: err instanceof Error ? err.message : 'Server error' })
+        }
+        return
       }
 
       if (options.methodologyService && method === 'POST' && pathname === '/api/v1/methodologies') {

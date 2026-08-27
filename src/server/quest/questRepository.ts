@@ -2,6 +2,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Quest, QuestProgress, QuestProposal } from '../../domain/quest.ts'
 import { validateQuest } from '../../domain/questValidation.ts'
+import { FirestoreQuestRepository } from './firestoreQuestRepository.ts'
+import { getStorageBackendType, type StorageBackendType } from '../repository.ts'
 
 export class StaleQuestVersionError extends Error {
   readonly code = 'STALE_QUEST_VERSION'
@@ -316,3 +318,15 @@ export class FileStorageQuestRepository implements IQuestRepository {
     return updated
   }
 }
+
+export function createQuestRepository(backendType?: StorageBackendType): IQuestRepository {
+  const selected = backendType || getStorageBackendType()
+  if (selected === 'firestore') {
+    return new FirestoreQuestRepository()
+  }
+  if (selected === 'memory') {
+    return new MemoryQuestRepository()
+  }
+  return new FileStorageQuestRepository()
+}
+

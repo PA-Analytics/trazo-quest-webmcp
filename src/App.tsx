@@ -21,6 +21,9 @@ import type {
   ProgressState,
 } from './domain/course'
 import type { UserProfile } from './domain/identity'
+import type { Quest } from './domain/quest.ts'
+import { adaptQuestToMap } from './adapters/questToMapAdapter.ts'
+import { useWebMCPTool } from './hooks/useWebMCPTool.ts'
 import {
   deriveMissionProgress,
   formatLockedReason,
@@ -78,11 +81,17 @@ function selectDemoPackId(): string {
 }
 
 export function App() {
+  const [activeQuest, setActiveQuest] = useState<Quest | null>(null)
   const [selectedPackId] = useState(() => selectDemoPackId())
   const staticCourse = useMemo(() => resolvePack(selectedPackId), [selectedPackId])
   const [graphCourse, setGraphCourse] = useState<Course | null>(null)
   const [graphProgress, setGraphProgress] = useState<Record<string, ProgressState> | null>(null)
-  const course = graphCourse ?? staticCourse
+
+  const questViewModel = useMemo(() => {
+    return activeQuest ? adaptQuestToMap(activeQuest) : null
+  }, [activeQuest])
+
+  const course = questViewModel?.course ?? graphCourse ?? staticCourse
   const [activeUserId, setActiveUserId] = useState(() => localStorage.getItem('trazo_active_user_id') || '')
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(() => Boolean(localStorage.getItem('trazo_active_user_id')))
@@ -104,6 +113,26 @@ export function App() {
   const [announcement, setAnnouncement] = useState('')
   const [showProfileSelection, setShowProfileSelection] = useState(false)
   const [isCreatingProfile, setIsCreatingProfile] = useState(false)
+
+  // Restore active quest on initial load if present in query params or local storage
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const requestedQuestId =
+      new URLSearchParams(window.location.search).get('questId') ||
+      localStorage.getItem('trazo_active_quest_id')
+
+    if (requestedQuestId) {
+      void fetch(`/api/v1/quests/${encodeURIComponent(requestedQuestId)}`)
+        .then(async (res) => {
+          if (res.ok) {
+            const data = (await res.json()) as Quest
+            setActiveQuest(data)
+            setSelectedMissionId(data.progress.activeMissionId || data.missions[0]?.id || null)
+          }
+        })
+        .catch((err) => console.warn('[TRAZO] Failed to load stored quest:', err))
+    }
+  }, [])
 
   useEffect(() => {
     if (!activeUserId) {
@@ -136,168 +165,175 @@ export function App() {
     }
   }, [profile?.learnerImplementationId, profile?.role])
 
-  // WebMCP Smoke Test: Expose create_quest_smoke_test tool on document.modelContext
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-
-    // Ensure document.modelContext exists (native in Chrome/ChatGPT or minimal polyfill container)
-    if (!(document as any).modelContext) {
-      const toolRegistry: any[] = []
-      ;(document as any).modelContext = {
-        registerTool: (toolDef: any, options?: { signal?: AbortSignal }) => {
-          toolRegistry.push(toolDef)
-          if (options?.signal) {
-            options.signal.addEventListener('abort', () => {
-              const idx = toolRegistry.indexOf(toolDef)
-              if (idx !== -1) toolRegistry.splice(idx, 1)
-            })
-          }
-          return {
-            unregister: () => {
-              const idx = toolRegistry.indexOf(toolDef)
-              if (idx !== -1) toolRegistry.splice(idx, 1)
-            },
-          }
-        },
-        getRegisteredTools: () => [...toolRegistry],
-      }
-    }
-
-    const modelContext = (document as any).modelContext ?? (navigator as any).modelContext
-    if (!modelContext?.registerTool) return
-
-    const controller = new AbortController()
-
-    const executeSmokeTest = async ({ goal }: { goal?: string }) => {
-      const goalTitle = goal || 'Analizar inflación en México'
-      const smokeCourse: Course = {
-        id: 'smoke-quest-course',
-        title: goalTitle,
-        chapters: [
-          {
-            id: 'smoke-chapter-1',
-            title: goalTitle,
-            shortTitle: 'Misiones',
-            mapPromise: 'Recorrido dinámico generado vía WebMCP',
-            missions: [
-              {
-                id: 'M1',
-                title: 'Obtener datos de inflación',
-                nodeType: 'normal',
-                mapRole: 'entry',
-                mapSubtitle: 'INEGI / Banxico',
-                progressState: 'available',
-                position: { x: 180, y: 160 },
-                description: 'Descargar e inspeccionar la serie histórica del INPC.',
-                evidenceType: 'text',
-                evidencePrompt: 'Pega el resumen del dataset descargado.',
-                evidenceCriteria: 'Debe contener la serie temporal del INPC.',
-              },
-              {
-                id: 'M2',
-                title: 'Evaluar estacionariedad',
-                nodeType: 'normal',
-                mapSubtitle: 'Test ADF',
-                progressState: 'locked',
-                prerequisites: ['M1'],
-                position: { x: 440, y: 160 },
-                description: 'Aplicar prueba de Dickey-Fuller aumentada (ADF).',
-                evidenceType: 'text',
-                evidencePrompt: 'Pega el estadístico ADF y su p-value.',
-                evidenceCriteria: 'Debe reportar estadístico t y p-valor.',
-              },
-              {
-                id: 'M3',
-                title: 'Interpretar resultado económico',
-                nodeType: 'milestone',
-                mapRole: 'convergence',
-                mapSubtitle: 'Diagnóstico',
-                progressState: 'locked',
-                prerequisites: ['M2'],
-                position: { x: 700, y: 160 },
-                description: 'Explicar las implicaciones macroeconómicas.',
-                evidenceType: 'text',
-                evidencePrompt: 'Pega tu conclusión económica breve.',
-                evidenceCriteria: 'Debe concluir si requiere primeras diferencias.',
-              },
-            ],
-            edges: [
-              { id: 'edge-m1-m2', source: 'M1', target: 'M2' },
-              { id: 'edge-m2-m3', source: 'M2', target: 'M3' },
-            ],
+  // ─── WEBMCP TOOLS: CREATE & GET QUEST ────────────────────────────────────
+  useWebMCPTool({
+    name: 'create_quest',
+    description: 'Initializes a new authoritative quest graph from a learning or execution goal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'object',
+          properties: {
+            rawPrompt: { type: 'string', description: 'The user goal or prompt' },
+            targetOutcome: { type: 'string', description: 'Concrete target outcome upon completion' },
           },
-        ],
-      }
-
-      setGraphCourse(smokeCourse)
-      setActiveChapterId('smoke-chapter-1')
-      setSelectedMissionId('M1')
-      setGraphProgress({
-        M1: 'available',
-        M2: 'locked',
-        M3: 'locked',
-      })
-      setImplementationState({
-        id: 'impl-smoke',
-        userId: 'guest-learner',
-        courseId: 'smoke-quest-course',
-        completedMissionIds: [],
-        activeMissionId: 'M1',
-        learnerSetup: {
-          goal: goalTitle,
-          availableTime: '15_30_MIN',
-          helpPreference: 'DIRECT',
-          updatedAt: new Date().toISOString(),
+          required: ['rawPrompt', 'targetOutcome'],
         },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        missions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              title: { type: 'string' },
+              description: { type: 'string' },
+              objective: { type: 'string' },
+              nodeType: { type: 'string', enum: ['normal', 'optional', 'milestone'] },
+              prerequisites: { type: 'array', items: { type: 'string' } },
+              evidencePrompt: { type: 'string' },
+              evaluationContract: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string', enum: ['deterministic', 'rubric', 'hybrid'] },
+                  description: { type: 'string' },
+                },
+                required: ['type', 'description'],
+              },
+            },
+            required: ['title', 'evaluationContract'],
+          },
+        },
+        edges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              source: { type: 'string' },
+              target: { type: 'string' },
+              optional: { type: 'boolean' },
+            },
+            required: ['source', 'target'],
+          },
+        },
+      },
+      required: ['goal', 'missions'],
+    },
+    annotations: {
+      readOnlyHint: false,
+    },
+    execute: async (payload: any) => {
+      const response = await fetch('/api/v1/quests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       })
-      setProfile({
-        userId: 'guest-learner',
-        displayName: 'Explorador Quest',
-        role: 'learner',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || `HTTP ${response.status}: Failed to create quest`)
+      }
+      const createdQuest = (await response.json()) as Quest
+
+      setActiveQuest(createdQuest)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('trazo_active_quest_id', createdQuest.id)
+      }
+      setSelectedMissionId(createdQuest.progress.activeMissionId || createdQuest.missions[0]?.id || null)
+
+      // Ensure profile exists for UI rendering
+      setProfile((prev) =>
+        prev
+          ? { ...prev, role: 'learner' }
+          : {
+              userId: 'guest-learner',
+              displayName: 'Explorador Quest',
+              role: 'learner',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+      )
       setProfileLoading(false)
       setServerError(null)
 
       return {
         ok: true,
-        goal: goalTitle,
-        missionCount: 3,
-        missionIds: ['M1', 'M2', 'M3'],
+        questId: createdQuest.id,
+        version: createdQuest.version,
+        totalMissions: createdQuest.missions.length,
+        activeMissionId: createdQuest.progress.activeMissionId,
+        missions: createdQuest.missions.map((m) => ({
+          id: m.id,
+          title: m.title,
+          status: m.id === createdQuest.progress.activeMissionId ? 'active' : 'locked',
+        })),
       }
-    }
+    },
+  })
 
-    try {
-      modelContext.registerTool(
-        {
-          name: 'create_quest_smoke_test',
-          description: 'Creates a temporary 3-node quest on the live canvas for WebMCP smoke testing.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              goal: { type: 'string', description: 'The user goal (e.g. Analyze Mexican inflation)' },
-            },
-            required: ['goal'],
-          },
-          execute: executeSmokeTest,
-        },
-        { signal: controller.signal },
-      )
+  useWebMCPTool({
+    name: 'get_quest_state',
+    description: 'Get the current authoritative graph topology, progression status, and unlocked missions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        questId: { type: 'string', description: 'Optional quest ID. Defaults to active quest on page.' },
+      },
+    },
+    annotations: {
+      readOnlyHint: true,
+    },
+    execute: async ({ questId }: { questId?: string } = {}) => {
+      const targetId =
+        questId ||
+        activeQuest?.id ||
+        (typeof window !== 'undefined' ? localStorage.getItem('trazo_active_quest_id') : null)
 
-      // Expose debug invoker on window for automated/manual tests
-      ;(window as any).__trazo_invoke_smoke_test = executeSmokeTest
-    } catch (err) {
-      console.warn('[WebMCP] Failed to register smoke test tool:', err)
-    }
+      if (!targetId) {
+        return {
+          ok: false,
+          error: 'No active quest on page. Call create_quest first.',
+        }
+      }
 
-    return () => {
-      controller.abort()
-      delete (window as any).__trazo_invoke_smoke_test
-    }
-  }, [])
+      if (activeQuest && activeQuest.id === targetId) {
+        const completedSet = new Set(activeQuest.progress.completedMissionIds || [])
+        return {
+          ok: true,
+          questId: activeQuest.id,
+          version: activeQuest.version,
+          goal: activeQuest.goal,
+          totalMissions: activeQuest.missions.length,
+          completedCount: completedSet.size,
+          activeMissionId: activeQuest.progress.activeMissionId,
+          missions: activeQuest.missions.map((m) => ({
+            id: m.id,
+            title: m.title,
+            description: m.description,
+            status: completedSet.has(m.id)
+              ? 'completed'
+              : m.id === activeQuest.progress.activeMissionId
+              ? 'active'
+              : 'locked',
+            prerequisites: m.prerequisites || [],
+            evaluationType: m.evaluationContract?.type || 'rubric',
+            evaluationDescription: m.evaluationContract?.description || '',
+          })),
+          edges: activeQuest.edges.map((e) => ({
+            source: e.source,
+            target: e.target,
+            optional: e.optional,
+          })),
+        }
+      }
+
+      const response = await fetch(`/api/v1/quests/${encodeURIComponent(targetId)}?projection=true`)
+      if (!response.ok) {
+        throw new Error(`Quest "${targetId}" not found.`)
+      }
+      return await response.json()
+    },
+  })
+
 
   const resetProfileScopedState = useCallback(() => {
     setActiveChapterId(course.chapters[0].id)
@@ -420,7 +456,9 @@ export function App() {
     (mission) => mission.id === selectedMissionId,
   )
   const activeMission = activeChapter.missions.find(
-    (mission) => mission.id === implementationState?.activeMissionId,
+    (mission) =>
+      mission.id ===
+      (activeQuest?.progress?.activeMissionId || implementationState?.activeMissionId),
   )
   const visualProgress = useMemo(() => {
     if (!activeMission || !['available', 'active', 'submitted'].includes(progress[activeMission.id])) {
@@ -640,107 +678,117 @@ export function App() {
     ],
   )
 
-  if (!activeUserId) {
-    return <IdentityEntry onComplete={handleIdentityComplete} />
-  }
+  if (!activeQuest) {
+    if (!activeUserId) {
+      return <IdentityEntry onComplete={handleIdentityComplete} />
+    }
 
-  if (showProfileSelection && profile) {
-    return (
-      <ProfileSelection
-        activeProfileId={profile.userId}
-        onSelect={handleProfileSelect}
-        onCreate={() => {
-          setShowProfileSelection(false)
-          setIsCreatingProfile(true)
-        }}
-        onClose={() => setShowProfileSelection(false)}
-      />
-    )
-  }
+    if (showProfileSelection && profile) {
+      return (
+        <ProfileSelection
+          activeProfileId={profile.userId}
+          onSelect={handleProfileSelect}
+          onCreate={() => {
+            setShowProfileSelection(false)
+            setIsCreatingProfile(true)
+          }}
+          onClose={() => setShowProfileSelection(false)}
+        />
+      )
+    }
 
-  if (isCreatingProfile) {
-    return <IdentityEntry onComplete={handleIdentityComplete} onCancel={() => setIsCreatingProfile(false)} />
-  }
+    if (isCreatingProfile) {
+      return <IdentityEntry onComplete={handleIdentityComplete} onCancel={() => setIsCreatingProfile(false)} />
+    }
 
-  if (profileLoading) {
-    return <div className="entry-shell"><p className="entry-loading">Cargando tu recorrido…</p></div>
-  }
+    if (profileLoading) {
+      return <div className="entry-shell"><p className="entry-loading">Cargando tu recorrido…</p></div>
+    }
 
-  if (!profile) {
-    return (
-      <div className="entry-shell">
-        <div className="entry-card" role="alert">
-          <p className="entry-kicker">TRAZO</p>
-          <h1>No pudimos cargar tu recorrido</h1>
-          <p className="entry-copy">{serverError ?? 'Intenta cargar tu perfil otra vez.'}</p>
-          <button
-            type="button"
-            className="entry-primary-button"
-            onClick={() => {
-              setServerError(null)
-              setProfileLoading(true)
-              void fetch(`/api/v1/profiles/${encodeURIComponent(activeUserId)}`)
-                .then(async (response) => {
-                  if (!response.ok) throw new Error('No se pudo cargar tu perfil.')
-                  return (await response.json()) as UserProfile
-                })
-                .then(setProfile)
-                .catch(() => setServerError('No se pudo cargar tu perfil. Intenta de nuevo.'))
-                .finally(() => setProfileLoading(false))
-            }}
-          >
-            Reintentar
-          </button>
+    if (!profile) {
+      return (
+        <div className="entry-shell">
+          <div className="entry-card" role="alert">
+            <p className="entry-kicker">TRAZO</p>
+            <h1>No pudimos cargar tu recorrido</h1>
+            <p className="entry-copy">{serverError ?? 'Intenta cargar tu perfil otra vez.'}</p>
+            <button
+              type="button"
+              className="entry-primary-button"
+              onClick={() => {
+                setServerError(null)
+                setProfileLoading(true)
+                void fetch(`/api/v1/profiles/${encodeURIComponent(activeUserId)}`)
+                  .then(async (response) => {
+                    if (!response.ok) throw new Error('No se pudo cargar tu perfil.')
+                    return (await response.json()) as UserProfile
+                  })
+                  .then(setProfile)
+                  .catch(() => setServerError('No se pudo cargar tu perfil. Intenta de nuevo.'))
+                  .finally(() => setProfileLoading(false))
+              }}
+            >
+              Reintentar
+            </button>
+          </div>
         </div>
-      </div>
-    )
+      )
+    }
+
+    if (!profile.role) {
+      return withProfileSwitcher(<RoleGateway profile={profile} onComplete={handleRoleComplete} />)
+    }
+
+    if (profile.role === 'coach' && !profile.coachSetup) {
+      return withProfileSwitcher(<CoachIntro profile={profile} onComplete={setProfile} />)
+    }
+
+    if (profile.role === 'coach') {
+      const calibrationMission =
+        course.chapters[0].missions.find((mission) => mission.mapRole === 'entry') ??
+        course.chapters[0].missions[0]
+      return withProfileSwitcher(<CreatorCalibrationView userId={profile.userId} initialMode={profile.coachSetup?.calibrationMode} mission={calibrationMission} />)
+    }
+
+    if (isLoading) {
+      return withProfileSwitcher(
+        <div className="app-shell" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+          <p style={{ color: 'var(--trazo-ink)', fontStyle: 'italic' }}>
+            Cargando estado de implementación desde el backend...
+          </p>
+        </div>,
+      )
+    }
+
+    if (serverError) {
+      return withProfileSwitcher(
+        <div className="app-shell" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 24 }}>
+          <div style={{ maxWidth: 480, textAlign: 'center' }}>
+            <h2 style={{ color: 'var(--trazo-ink)' }}>Error de conexión con el backend</h2>
+            <p style={{ color: 'var(--trazo-muted)', margin: '12px 0 20px' }}>{serverError}</p>
+            <button
+              type="button"
+              className="submit-evidence-button"
+              onClick={() => void loadImplementation()}
+            >
+              Reintentar conexión
+            </button>
+          </div>
+        </div>,
+      )
+    }
+
+    if (!implementationState?.learnerSetup) {
+      return withProfileSwitcher(<LearnerQuickSetup userId={profile.userId} implementationId={implementationId} onComplete={setImplementationState} />)
+    }
   }
 
-  if (!profile.role) {
-    return withProfileSwitcher(<RoleGateway profile={profile} onComplete={handleRoleComplete} />)
-  }
-
-  if (profile.role === 'coach' && !profile.coachSetup) {
-    return withProfileSwitcher(<CoachIntro profile={profile} onComplete={setProfile} />)
-  }
-
-  if (profile.role === 'coach') {
-    const calibrationMission =
-      course.chapters[0].missions.find((mission) => mission.mapRole === 'entry') ??
-      course.chapters[0].missions[0]
-    return withProfileSwitcher(<CreatorCalibrationView userId={profile.userId} initialMode={profile.coachSetup?.calibrationMode} mission={calibrationMission} />)
-  }
-
-  if (isLoading) {
-    return withProfileSwitcher(
-      <div className="app-shell" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
-        <p style={{ color: 'var(--trazo-ink)', fontStyle: 'italic' }}>
-          Cargando estado de implementación desde el backend...
-        </p>
-      </div>,
-    )
-  }
-
-  if (serverError) {
-    return withProfileSwitcher(
-      <div className="app-shell" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 24 }}>
-        <div style={{ maxWidth: 480, textAlign: 'center' }}>
-          <h2 style={{ color: 'var(--trazo-ink)' }}>Error de conexión con el backend</h2>
-          <p style={{ color: 'var(--trazo-muted)', margin: '12px 0 20px' }}>{serverError}</p>
-          <button
-            type="button"
-            className="submit-evidence-button"
-            onClick={() => void loadImplementation()}
-          >
-            Reintentar conexión
-          </button>
-        </div>
-      </div>,
-    )
-  }
-
-  if (!implementationState?.learnerSetup) {
-    return withProfileSwitcher(<LearnerQuickSetup userId={profile.userId} implementationId={implementationId} onComplete={setImplementationState} />)
+  const effectiveProfile: UserProfile = profile ?? {
+    userId: 'guest-learner',
+    displayName: 'Explorador Quest',
+    role: 'learner',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   }
 
   return (
@@ -757,12 +805,12 @@ export function App() {
           completed={completedCount}
           total={activeChapter.missions.length}
           activeMissionTitle={activeMission?.title}
-          profile={profile}
+          profile={effectiveProfile}
           onProfileOpen={() => setShowProfileSelection(true)}
           onRecenter={() => setRecenterRequest((request) => request + 1)}
         />
         <QuestMap
-          userId={profile.userId}
+          userId={effectiveProfile.userId}
           chapter={activeChapter}
           progress={visualProgress}
           evaluationStateByMissionId={evaluationStateByMissionId}

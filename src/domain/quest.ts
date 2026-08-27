@@ -94,6 +94,7 @@ export interface Quest {
   missions: QuestMission[]
   edges: QuestEdge[]
   proposals: QuestProposal[]
+  progress: QuestProgress
   createdAt: string
   updatedAt: string
 }

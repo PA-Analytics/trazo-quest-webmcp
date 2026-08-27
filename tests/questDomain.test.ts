@@ -102,6 +102,13 @@ function createSampleQuest(overrides?: Partial<Quest>): Quest {
       { id: 'e2', source: 'M02', target: 'M03' },
     ],
     proposals: [],
+    progress: {
+      questId: 'quest_mexican_inflation',
+      completedMissionIds: [],
+      activeMissionId: 'M01',
+      artifacts: {},
+      updatedAt: new Date().toISOString(),
+    },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,

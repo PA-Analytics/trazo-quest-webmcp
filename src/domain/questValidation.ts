@@ -171,4 +171,22 @@ export function validateQuest(quest: Quest): void {
   }
 
   validateQuestTopology(quest.missions, quest.edges)
+
+  if (!quest.entryNodeIds || !Array.isArray(quest.entryNodeIds) || quest.entryNodeIds.length === 0) {
+    const targetIds = new Set(quest.edges.map((e) => e.target))
+    quest.entryNodeIds = quest.missions.filter((m) => !targetIds.has(m.id)).map((m) => m.id)
+    if (quest.entryNodeIds.length === 0 && quest.missions.length > 0) {
+      quest.entryNodeIds = [quest.missions[0].id]
+    }
+  }
+
+  if (!quest.progress) {
+    quest.progress = {
+      questId: quest.id,
+      completedMissionIds: [],
+      activeMissionId: quest.entryNodeIds[0],
+      artifacts: {},
+      updatedAt: new Date().toISOString(),
+    }
+  }
 }
