@@ -1,5 +1,14 @@
 # Project: 2.5D TRAZO Implementation Companion
 
+## Product Lines & TRAZO Quest Split
+This repository is the canonical home of **TRAZO Quest** (forked from TRAZO Programs at commit `fb07257a7401d8a4b3e5f6050e507c048a73c66f`).
+
+* **TRAZO Programs:** Coach methodology $\longrightarrow$ Executable mission path.
+* **TRAZO Quest:** Human + External Agent intention $\longrightarrow$ Executable mission path (via WebMCP).
+* **Shared Core:** Directed Acyclic Graph (DAG) missions, concrete evidence submission, automated Judge evaluation, and deterministic progression.
+
+For the canonical product thesis, collaboration model, and WebMCP architecture, see [docs/quest/QUEST_THESIS.md](docs/quest/QUEST_THESIS.md).
+
 ## Architecture
 - **Layering**: React Flow Canvas (`.react-flow__viewport`) host layer -> In-Canvas 2.5D Companion Sprite + Decoupled Shadow -> Anchored Conversation Popover.
 - **Kinematics Engine**: High-frequency frame loop (`useCompanionTraveler.ts`) using `SVGPathElement.getPointAtLength()` via `companionPathSampler.ts`, updating GPU `translate3d`, 8-way compass tangents, elevation bobbing, and dynamic shadow attenuation at 60/120fps with zero React fiber re-renders during motion.

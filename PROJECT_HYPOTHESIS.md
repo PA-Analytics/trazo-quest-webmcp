@@ -8,6 +8,12 @@ El producto transforma la metodología del creador en un árbol visual de habili
 
 La inspiración de experiencia es un sistema como FTB Quests: el usuario ve el mapa completo, entiende dónde está, completa una misión y desbloquea la siguiente parte del recorrido. La IA funciona detrás del producto, pero no constituye por sí sola la propuesta de valor.
 
+> [!NOTE]
+> **Evolución del producto:** A partir del commit `fb07257a7401d8a4b3e5f6050e507c048a73c66f`, TRAZO formalizó dos líneas sobre el mismo núcleo de progresión:
+> * **TRAZO Programs:** Metodología de coach $\rightarrow$ Ruta ejecutable.
+> * **TRAZO Quest:** Intención de alumno + Agente externo (WebMCP) $\rightarrow$ Ruta ejecutable.
+> Documentación canónica de Quest en [docs/quest/QUEST_THESIS.md](docs/quest/QUEST_THESIS.md).
+
 ## 2. Hipótesis central
 
 Los creadores que venden cursos, cohortes, membresías o programas de acompañamiento con resultados concretos tienen dificultad para conseguir que sus alumnos implementen el contenido de manera constante.
