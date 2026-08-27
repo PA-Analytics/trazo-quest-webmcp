@@ -30,7 +30,16 @@ import type {
 } from './types.ts'
 import type { MethodologyGraph } from '../domain/methodology.ts'
 import { QuestValidationError } from '../domain/questValidation.ts'
-import { QuestService, type CreateQuestDTO } from './quest/questService.ts'
+import {
+  ProposalNotFoundError,
+  QuestNotFoundError,
+  StaleQuestVersionError,
+} from './quest/questRepository.ts'
+import {
+  QuestService,
+  type CreateQuestDTO,
+  type ProposeQuestChangeDTO,
+} from './quest/questService.ts'
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -554,6 +563,109 @@ export function createRequestListener(
         }
         return
       }
+
+      // ─── PROPOSALS ROUTES ───────────────────────────────────────────────
+      const proposeMatch = pathname.match(/^\/api\/v1\/quests\/([^/]+)\/proposals$/)
+      if (method === 'POST' && proposeMatch) {
+        const questId = proposeMatch[1]
+        try {
+          const body = await parseBody<ProposeQuestChangeDTO>(req)
+          const result = await questService.proposeQuestChange(questId, body)
+          sendJSON(res, 201, {
+            ok: true,
+            quest: result.quest,
+            proposal: result.proposal,
+            message: 'Proposal is visible in TRAZO and awaits human approval.',
+          })
+        } catch (err: unknown) {
+          if (err instanceof StaleQuestVersionError) {
+            sendJSON(res, 409, {
+              ok: false,
+              code: 'STALE_QUEST_VERSION',
+              expectedVersion: err.expectedVersion,
+              currentVersion: err.currentVersion,
+              message: 'Quest changed since your last read. Refresh state before proposing again.',
+            })
+          } else if (err instanceof QuestValidationError) {
+            sendJSON(res, 400, { ok: false, code: err.code, error: err.message })
+          } else if (err instanceof QuestNotFoundError) {
+            sendJSON(res, 404, { ok: false, code: 'QUEST_NOT_FOUND', error: err.message })
+          } else {
+            const message = err instanceof Error ? err.message : String(err)
+            if (message.includes('INVALID_') || message.includes('DANGLING_') || message.includes('GRAPH_')) {
+              sendJSON(res, 400, { ok: false, code: 'INVALID_PROPOSAL', error: message })
+            } else {
+              sendJSON(res, 503, { ok: false, code: 'BACKEND_UNAVAILABLE', error: message })
+            }
+          }
+        }
+        return
+      }
+
+      const acceptMatch = pathname.match(/^\/api\/v1\/quests\/([^/]+)\/proposals\/([^/]+)\/accept$/)
+      if (method === 'POST' && acceptMatch) {
+        const questId = acceptMatch[1]
+        const proposalId = acceptMatch[2]
+        try {
+          const body = await parseBody<{ expectedVersion: number }>(req)
+          const quest = await questService.acceptProposal(questId, proposalId, body.expectedVersion)
+          sendJSON(res, 200, { ok: true, quest })
+        } catch (err: unknown) {
+          if (err instanceof StaleQuestVersionError) {
+            sendJSON(res, 409, {
+              ok: false,
+              code: 'STALE_QUEST_VERSION',
+              expectedVersion: err.expectedVersion,
+              currentVersion: err.currentVersion,
+              message: 'Quest changed since your last read. Refresh state before accepting.',
+            })
+          } else if (err instanceof ProposalNotFoundError) {
+            sendJSON(res, 404, { ok: false, code: 'PROPOSAL_NOT_FOUND', error: err.message })
+          } else if (err instanceof QuestNotFoundError) {
+            sendJSON(res, 404, { ok: false, code: 'QUEST_NOT_FOUND', error: err.message })
+          } else {
+            sendJSON(res, 400, {
+              ok: false,
+              code: 'ACCEPT_FAILED',
+              error: err instanceof Error ? err.message : 'Accept failed',
+            })
+          }
+        }
+        return
+      }
+
+      const rejectMatch = pathname.match(/^\/api\/v1\/quests\/([^/]+)\/proposals\/([^/]+)\/reject$/)
+      if (method === 'POST' && rejectMatch) {
+        const questId = rejectMatch[1]
+        const proposalId = rejectMatch[2]
+        try {
+          const body = await parseBody<{ expectedVersion: number }>(req)
+          const quest = await questService.rejectProposal(questId, proposalId, body.expectedVersion)
+          sendJSON(res, 200, { ok: true, quest })
+        } catch (err: unknown) {
+          if (err instanceof StaleQuestVersionError) {
+            sendJSON(res, 409, {
+              ok: false,
+              code: 'STALE_QUEST_VERSION',
+              expectedVersion: err.expectedVersion,
+              currentVersion: err.currentVersion,
+              message: 'Quest changed since your last read. Refresh state before rejecting.',
+            })
+          } else if (err instanceof ProposalNotFoundError) {
+            sendJSON(res, 404, { ok: false, code: 'PROPOSAL_NOT_FOUND', error: err.message })
+          } else if (err instanceof QuestNotFoundError) {
+            sendJSON(res, 404, { ok: false, code: 'QUEST_NOT_FOUND', error: err.message })
+          } else {
+            sendJSON(res, 400, {
+              ok: false,
+              code: 'REJECT_FAILED',
+              error: err instanceof Error ? err.message : 'Reject failed',
+            })
+          }
+        }
+        return
+      }
+
 
       if (options.methodologyService && method === 'POST' && pathname === '/api/v1/methodologies') {
         if (!(await requireRole(req, res, identity, 'coach')) && identity) return

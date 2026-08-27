@@ -14,6 +14,7 @@ export interface QuestEdgeData extends Record<string, unknown> {
   highlighted: boolean
   leadsToMilestone: boolean
   via?: MapPosition
+  isGhost?: boolean
 }
 
 export type QuestFlowEdge = Edge<QuestEdgeData, 'quest'>
@@ -68,8 +69,9 @@ export const QuestEdge = memo(function QuestEdge({
   return (
     <BaseEdge
       path={edgePath}
-      className="quest-edge-path"
-      data-progress={data?.progressState ?? 'locked'}
+      className={`quest-edge-path ${data?.isGhost ? 'quest-edge-path--ghost' : ''}`}
+      data-progress={data?.isGhost ? 'ghost' : data?.progressState ?? 'locked'}
+      data-ghost={data?.isGhost ? 'true' : undefined}
       data-route={data?.routeTier ?? 'future'}
       data-optional={data?.optional ?? false}
       data-highlighted={data?.highlighted ?? false}
@@ -77,3 +79,4 @@ export const QuestEdge = memo(function QuestEdge({
     />
   )
 })
+

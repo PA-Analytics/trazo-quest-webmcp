@@ -334,6 +334,156 @@ export function App() {
     },
   })
 
+  useWebMCPTool({
+    name: 'propose_quest_change',
+    description: 'Propose a new mission or structural path change to the active quest. The change appears as a non-authoritative Ghost Node awaiting human approval.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        questId: { type: 'string', description: 'Optional quest ID. Defaults to active quest on page.' },
+        expectedVersion: { type: 'number', description: 'Current known version of the quest document.' },
+        mission: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Optional mission ID' },
+            title: { type: 'string', description: 'Mission title' },
+            description: { type: 'string', description: 'Mission description' },
+            objective: { type: 'string' },
+            mapSubtitle: { type: 'string' },
+            evidencePrompt: { type: 'string' },
+            evaluationContract: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', enum: ['deterministic', 'rubric', 'hybrid'] },
+                description: { type: 'string' },
+              },
+              required: ['type', 'description'],
+            },
+          },
+          required: ['title', 'evaluationContract'],
+        },
+        connectFrom: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Mission IDs that lead to this proposed mission',
+        },
+        connectTo: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Mission IDs that this proposed mission should lead to',
+        },
+      },
+      required: ['expectedVersion', 'mission', 'connectFrom'],
+    },
+    annotations: {
+      readOnlyHint: false,
+    },
+    execute: async (payload: any) => {
+      const targetId = payload.questId || activeQuest?.id || (typeof window !== 'undefined' ? localStorage.getItem('trazo_active_quest_id') : null)
+      if (!targetId) {
+        return { ok: false, error: 'No active quest on page. Call create_quest first.' }
+      }
+
+      const response = await fetch(`/api/v1/quests/${encodeURIComponent(targetId)}/proposals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          return {
+            ok: false,
+            code: 'STALE_QUEST_VERSION',
+            expectedVersion: payload.expectedVersion,
+            currentVersion: result.currentVersion,
+            message: result.message || 'Quest changed since your last read. Refresh state before proposing again.',
+          }
+        }
+        throw new Error(result.error || `HTTP ${response.status}: Failed to propose quest change`)
+      }
+
+      if (result.quest) {
+        setActiveQuest(result.quest)
+      }
+
+      return {
+        ok: true,
+        questId: targetId,
+        version: result.quest?.version,
+        proposal: {
+          id: result.proposal?.id,
+          status: result.proposal?.status,
+          missionId: result.proposal?.mission?.id,
+          title: result.proposal?.mission?.title,
+        },
+        message: 'Proposal is visible in TRAZO and awaits human approval.',
+      }
+    },
+  })
+
+  const handleAcceptProposal = useCallback(async (proposalId: string) => {
+    if (!activeQuest) return
+    try {
+      const response = await fetch(`/api/v1/quests/${encodeURIComponent(activeQuest.id)}/proposals/${encodeURIComponent(proposalId)}/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedVersion: activeQuest.version }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (response.status === 409) {
+          const freshResp = await fetch(`/api/v1/quests/${encodeURIComponent(activeQuest.id)}`)
+          if (freshResp.ok) {
+            const freshQuest = await freshResp.json()
+            setActiveQuest(freshQuest)
+          }
+          alert('El quest cambió recientemente. Se actualizó el mapa; por favor intenta de nuevo.')
+          return
+        }
+        throw new Error(result.error || 'Error al aceptar propuesta')
+      }
+      if (result.quest) {
+        setActiveQuest(result.quest)
+      }
+    } catch (err: any) {
+      console.error('[TRAZO] Accept proposal failed:', err)
+      setServerError(err.message || 'Error al aceptar propuesta')
+    }
+  }, [activeQuest])
+
+  const handleRejectProposal = useCallback(async (proposalId: string) => {
+    if (!activeQuest) return
+    try {
+      const response = await fetch(`/api/v1/quests/${encodeURIComponent(activeQuest.id)}/proposals/${encodeURIComponent(proposalId)}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedVersion: activeQuest.version }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (response.status === 409) {
+          const freshResp = await fetch(`/api/v1/quests/${encodeURIComponent(activeQuest.id)}`)
+          if (freshResp.ok) {
+            const freshQuest = await freshResp.json()
+            setActiveQuest(freshQuest)
+          }
+          alert('El quest cambió recientemente. Se actualizó el mapa; por favor intenta de nuevo.')
+          return
+        }
+        throw new Error(result.error || 'Error al rechazar propuesta')
+      }
+      if (result.quest) {
+        setActiveQuest(result.quest)
+      }
+    } catch (err: any) {
+      console.error('[TRAZO] Reject proposal failed:', err)
+      setServerError(err.message || 'Error al rechazar propuesta')
+    }
+  }, [activeQuest])
+
 
   const resetProfileScopedState = useCallback(() => {
     setActiveChapterId(course.chapters[0].id)
@@ -826,7 +976,12 @@ export function App() {
           activeMissionId={activeMission?.id}
           isEvaluating={selectedMissionId ? evaluationStateByMissionId[selectedMissionId]?.status === 'evaluating' : false}
           isVerifiedAction={selectedMissionId ? evaluationStateByMissionId[selectedMissionId]?.policyVerdict === 'PASS' : false}
+          pendingProposals={questViewModel?.pendingProposals}
+          onAcceptProposal={handleAcceptProposal}
+          onRejectProposal={handleRejectProposal}
         />
+
+
       </main>
 
       {selectedMission && (

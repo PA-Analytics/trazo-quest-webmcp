@@ -1,11 +1,12 @@
 import type { Chapter, Course, Mission, MissionEdge, MissionProgress, ProgressState } from '../domain/course.ts'
-import type { Quest, QuestMission } from '../domain/quest.ts'
+import type { Quest, QuestMission, QuestProposal } from '../domain/quest.ts'
 
 export interface QuestMapViewModel {
   course: Course
   chapter: Chapter
   progress: MissionProgress
   activeMissionId?: string
+  pendingProposals: QuestProposal[]
 }
 
 export function deriveQuestProgressStates(quest: Quest): Record<string, ProgressState> {
@@ -34,6 +35,7 @@ export function deriveQuestProgressStates(quest: Quest): Record<string, Progress
 
 export function adaptQuestToMap(quest: Quest): QuestMapViewModel {
   const progress = deriveQuestProgressStates(quest)
+  const pendingProposals = (quest.proposals || []).filter((p) => p.status === 'pending')
 
   const missions: Mission[] = quest.missions.map((qm: QuestMission) => ({
     id: qm.id,
@@ -80,5 +82,7 @@ export function adaptQuestToMap(quest: Quest): QuestMapViewModel {
     chapter,
     progress,
     activeMissionId: quest.progress?.activeMissionId,
+    pendingProposals,
   }
 }
+

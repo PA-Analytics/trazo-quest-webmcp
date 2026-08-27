@@ -1389,6 +1389,97 @@ textarea:focus-visible {
   stroke-width: 2.75px;
 }
 
+/* ─── GHOST NODES & GHOST EDGES (WEBMCP PROPOSALS) ─── */
+.react-flow__edge-path.quest-edge-path[data-ghost="true"] {
+  stroke: color-mix(in srgb, var(--trazo-indigo) 75%, #3b82f6);
+  stroke-width: 2.25px;
+  stroke-dasharray: 6 6;
+  opacity: 0.85;
+}
+
+.quest-node-shell.quest-node--ghost {
+  opacity: 0.92;
+}
+
+.quest-node-shell.quest-node--ghost .quest-node-shape {
+  background: color-mix(in srgb, var(--trazo-paper) 90%, #e0e7ff);
+  border: 2px dashed color-mix(in srgb, var(--trazo-indigo) 80%, #3b82f6);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
+}
+
+.quest-node-shell.quest-node--ghost .quest-node-depth {
+  background: transparent;
+  box-shadow: none;
+}
+
+.ghost-node-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--trazo-indigo);
+}
+
+.quest-node-ghost-pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--trazo-font-sans, system-ui, sans-serif);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--trazo-indigo) 90%, #1e3a8a);
+  background: color-mix(in srgb, #e0e7ff 90%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--trazo-indigo) 30%, #c7d2fe);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.ghost-node-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  z-index: 10;
+}
+
+.ghost-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  font-family: var(--trazo-font-sans, system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.ghost-action-btn--accept {
+  background: var(--trazo-ink, #0f172a);
+  color: var(--trazo-paper, #ffffff);
+  border: 1px solid var(--trazo-ink, #0f172a);
+}
+
+.ghost-action-btn--accept:hover {
+  background: color-mix(in srgb, var(--trazo-ink) 85%, #3b82f6);
+  border-color: color-mix(in srgb, var(--trazo-ink) 85%, #3b82f6);
+}
+
+.ghost-action-btn--reject {
+  background: var(--trazo-paper, #ffffff);
+  color: color-mix(in srgb, var(--trazo-ink) 65%, #64748b);
+  border: 1px solid color-mix(in srgb, var(--trazo-border) 80%, #cbd5e1);
+}
+
+.ghost-action-btn--reject:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+
 
 .mission-panel {
   position: fixed;

@@ -19,6 +19,10 @@ export interface QuestNodeData extends Record<string, unknown> {
   lockedReason?: string
   onSelect: (missionId: string) => void
   onHover: (missionId: string | null) => void
+  isGhost?: boolean
+  proposalId?: string
+  onAcceptProposal?: (proposalId: string) => void
+  onRejectProposal?: (proposalId: string) => void
 }
 
 export type QuestFlowNode = Node<QuestNodeData, 'quest'>
@@ -33,11 +37,15 @@ export const QuestNode = memo(function QuestNode({ data }: NodeProps<QuestFlowNo
     lockedReason,
     onSelect,
     onHover,
+    isGhost,
+    proposalId,
+    onAcceptProposal,
+    onRejectProposal,
   } = data
   const { zoom } = useViewport()
   const detailLevel = zoom >= 0.62 ? 'standard' : zoom >= 0.42 ? 'overview' : 'far'
-  const stateLabel = progressLabels[progressState]
-  const typeLabel = nodeTypeLabels[mission.nodeType]
+  const stateLabel = isGhost ? 'Propuesta AI' : progressLabels[progressState]
+  const typeLabel = isGhost ? 'Paso propuesto' : nodeTypeLabels[mission.nodeType]
   const description = lockedReason ? ` ${lockedReason}` : ''
   const subtitle = mission.mapSubtitle ? ` ${mission.mapSubtitle}` : ''
   const evaluationDescription =
@@ -55,8 +63,9 @@ export const QuestNode = memo(function QuestNode({ data }: NodeProps<QuestFlowNo
 
   return (
     <div
-      className={`quest-node-shell quest-node--${mission.nodeType}`}
-      data-progress={progressState}
+      className={`quest-node-shell quest-node--${mission.nodeType} ${isGhost ? 'quest-node--ghost' : ''}`}
+      data-progress={isGhost ? 'ghost' : progressState}
+      data-ghost={isGhost ? 'true' : undefined}
       data-evaluation={evaluationStatus ?? 'idle'}
       data-recommended={recommended}
       data-selected={selected}
@@ -65,7 +74,7 @@ export const QuestNode = memo(function QuestNode({ data }: NodeProps<QuestFlowNo
       onPointerEnter={() => onHover(mission.id)}
       onPointerLeave={() => onHover(null)}
     >
-      {mission.nodeType === 'milestone' && (
+      {mission.nodeType === 'milestone' && !isGhost && (
         <span className="quest-node-destination-rings" aria-hidden="true">
           <span />
           <span />
@@ -87,48 +96,70 @@ export const QuestNode = memo(function QuestNode({ data }: NodeProps<QuestFlowNo
         <span className="quest-node-depth" aria-hidden="true" />
         <span className="quest-node-shape" aria-hidden="true">
           <span className="quest-node-frame" />
-          <MissionIcon state={progressState} nodeType={mission.nodeType} missionId={mission.id} />
-          <StateBadge state={progressState} />
+          {isGhost ? (
+            <span className="ghost-node-badge-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" strokeDasharray="3 3" />
+                <path d="M12 8v8" />
+                <path d="M8 12h8" />
+              </svg>
+            </span>
+          ) : (
+            <>
+              <MissionIcon state={progressState} nodeType={mission.nodeType} missionId={mission.id} />
+              <StateBadge state={progressState} />
+            </>
+          )}
         </span>
-        {mission.mapRole === 'entry' && progressState === 'available' && (
+        {isGhost && (
+          <span className="quest-node-ghost-pill" aria-hidden="true">
+            PROPUESTA AI
+          </span>
+        )}
+        {mission.mapRole === 'entry' && progressState === 'available' && !isGhost && (
           <span className="quest-node-entry-cue" aria-hidden="true">
             <span />
             Empieza aquí
           </span>
         )}
-        {mission.nodeType === 'milestone' && (
+        {mission.nodeType === 'milestone' && !isGhost && (
           <span className="quest-node-eyebrow" aria-hidden="true">
-            Destino · 09
+            Destino
           </span>
         )}
         <span className="quest-node-title">{mission.title}</span>
         {mission.mapSubtitle && (
           <span className="quest-node-subtitle">{mission.mapSubtitle}</span>
         )}
-        {mission.mapRole === 'convergence' && (
-          <span className="quest-node-role-cue" aria-hidden="true">
-            Las rutas se unen
-          </span>
-        )}
-        {mission.nodeType === 'optional' && (
-          <span className="quest-node-role-cue quest-node-role-cue--optional" aria-hidden="true">
-            Ruta extra
-          </span>
-        )}
-        {progressState === 'active' && (
-          <span className="quest-node-cue" aria-hidden="true">
-            <span />
-            Aquí estás
-          </span>
-        )}
-        {recommended && (
-          <span className="quest-node-recommendation" aria-hidden="true">
-            Recomendado
-          </span>
+        {isGhost && proposalId && (
+          <div className="ghost-node-actions nodrag" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="ghost-action-btn ghost-action-btn--accept"
+              title="Aceptar e integrar al recorrido"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAcceptProposal?.(proposalId)
+              }}
+            >
+              Aceptar
+            </button>
+            <button
+              type="button"
+              className="ghost-action-btn ghost-action-btn--reject"
+              title="Rechazar propuesta"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRejectProposal?.(proposalId)
+              }}
+            >
+              Rechazar
+            </button>
+          </div>
         )}
         <span id={tooltipId} className="quest-node-tooltip" role="tooltip">
           <span>{mission.title}</span>
-          <span>{stateLabel}</span>
+          <span>{isGhost ? 'Propuesta esperando aprobación' : stateLabel}</span>
           <span className="quest-node-tooltip__context">{mission.description}</span>
         </span>
       </button>
@@ -136,3 +167,4 @@ export const QuestNode = memo(function QuestNode({ data }: NodeProps<QuestFlowNo
     </div>
   )
 })
+

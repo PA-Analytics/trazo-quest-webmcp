@@ -5,10 +5,16 @@ import type {
   QuestMission,
   QuestNodeType,
   QuestProgress,
+  QuestProposal,
 } from '../../domain/quest.ts'
-import { validateQuest } from '../../domain/questValidation.ts'
+import {
+  validateEvaluationContract,
+  validateQuest,
+  validateQuestTopology,
+} from '../../domain/questValidation.ts'
 import {
   type IQuestRepository,
+  ProposalNotFoundError,
   createQuestRepository,
 } from './questRepository.ts'
 
@@ -40,6 +46,22 @@ export interface CreateQuestDTO {
   edges?: CreateEdgeDTO[]
 }
 
+export interface ProposeQuestChangeDTO {
+  expectedVersion: number
+  mission: {
+    id?: string
+    title: string
+    description?: string
+    objective?: string
+    nodeType?: QuestNodeType
+    mapSubtitle?: string
+    evidencePrompt?: string
+    evaluationContract: EvaluationContract
+  }
+  connectFrom: string[]
+  connectTo?: string[]
+}
+
 export interface QuestStateProjectionDTO {
   questId: string
   version: number
@@ -50,6 +72,7 @@ export interface QuestStateProjectionDTO {
   totalMissions: number
   completedCount: number
   activeMissionId?: string
+  pendingProposalsCount: number
   missions: Array<{
     id: string
     title: string
@@ -63,6 +86,14 @@ export interface QuestStateProjectionDTO {
     source: string
     target: string
     optional?: boolean
+  }>
+  proposals: Array<{
+    id: string
+    status: string
+    missionId: string
+    title: string
+    connectFrom: string[]
+    connectTo?: string[]
   }>
 }
 
@@ -181,11 +212,209 @@ export class QuestService {
     return await this.repository.getQuest(id)
   }
 
+  async proposeQuestChange(
+    questId: string,
+    dto: ProposeQuestChangeDTO
+  ): Promise<{ quest: Quest; proposal: QuestProposal }> {
+    if (!dto || typeof dto !== 'object') {
+      throw new Error('INVALID_PAYLOAD: Proposal payload is required.')
+    }
+    if (typeof dto.expectedVersion !== 'number') {
+      throw new Error('INVALID_EXPECTED_VERSION: expectedVersion is required.')
+    }
+    if (!dto.mission || !dto.mission.title) {
+      throw new Error('INVALID_MISSION: Proposed mission must have a title.')
+    }
+    if (!dto.mission.evaluationContract) {
+      throw new Error('INVALID_CONTRACT: Proposed mission must have an evaluationContract.')
+    }
+    if (!Array.isArray(dto.connectFrom) || dto.connectFrom.length === 0) {
+      throw new Error('INVALID_CONNECT_FROM: connectFrom must contain at least one source mission ID.')
+    }
+
+    validateEvaluationContract(dto.mission.evaluationContract, dto.mission.id || 'proposed_mission')
+
+    let createdProposal: QuestProposal | null = null
+
+    const updatedQuest = await this.repository.updateQuest(
+      questId,
+      dto.expectedVersion,
+      (draft: Quest) => {
+        const canonicalIds = new Set(draft.missions.map((m) => m.id))
+        const pendingIds = new Set(
+          (draft.proposals || [])
+            .filter((p) => p.status === 'pending')
+            .map((p) => p.mission.id)
+        )
+
+        // 1. Verify connectFrom and connectTo reference existing canonical missions
+        for (const fromId of dto.connectFrom) {
+          if (!canonicalIds.has(fromId)) {
+            throw new Error(`DANGLING_EDGE_SOURCE: Proposed connectFrom mission "${fromId}" does not exist.`)
+          }
+        }
+        for (const toId of dto.connectTo || []) {
+          if (!canonicalIds.has(toId)) {
+            throw new Error(`DANGLING_EDGE_TARGET: Proposed connectTo mission "${toId}" does not exist.`)
+          }
+        }
+
+        // 2. Generate unique mission ID
+        let propMissionId = dto.mission.id?.trim()
+        if (!propMissionId || canonicalIds.has(propMissionId) || pendingIds.has(propMissionId)) {
+          propMissionId = `${dto.connectFrom[0]}A`
+          if (canonicalIds.has(propMissionId) || pendingIds.has(propMissionId)) {
+            propMissionId = `M_${Date.now().toString(36).slice(-4)}`
+          }
+        }
+
+        // 3. Compute sensible canvas position
+        const fromMission = draft.missions.find((m) => m.id === dto.connectFrom[0])
+        const toMission = dto.connectTo?.[0] ? draft.missions.find((m) => m.id === dto.connectTo![0]) : undefined
+        let posX = fromMission ? fromMission.position.x + 130 : 250
+        let posY = fromMission ? fromMission.position.y + 110 : 250
+        if (fromMission && toMission) {
+          posX = (fromMission.position.x + toMission.position.x) / 2
+          posY = (fromMission.position.y + toMission.position.y) / 2 + 100
+        }
+
+        const normalizedMission: QuestMission = {
+          id: propMissionId,
+          title: dto.mission.title.trim(),
+          description: (dto.mission.description || dto.mission.objective || dto.mission.title).trim(),
+          nodeType: dto.mission.nodeType || 'normal',
+          mapSubtitle: dto.mission.mapSubtitle,
+          position: { x: posX, y: posY },
+          prerequisites: [...dto.connectFrom],
+          evidenceType: 'text',
+          evidencePrompt: dto.mission.evidencePrompt || `Envía la evidencia para: ${dto.mission.title}`,
+          evaluationContract: dto.mission.evaluationContract,
+        }
+
+        // 4. Simulate candidate DAG topology to ensure proposal won't create cycles
+        const candidateMissions = [...draft.missions, normalizedMission]
+        const candidateEdges = [
+          ...draft.edges,
+          ...dto.connectFrom.map((fromId) => ({
+            id: `candidate_edge_${fromId}_${propMissionId}`,
+            source: fromId,
+            target: propMissionId!,
+          })),
+          ...(dto.connectTo || []).map((toId) => ({
+            id: `candidate_edge_${propMissionId}_${toId}`,
+            source: propMissionId!,
+            target: toId,
+          })),
+        ]
+        validateQuestTopology(candidateMissions, candidateEdges)
+
+        // 5. Construct proposal
+        const proposal: QuestProposal = {
+          id: `prop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          questId,
+          targetExpectedVersion: dto.expectedVersion,
+          mission: normalizedMission,
+          connectFrom: dto.connectFrom,
+          connectTo: dto.connectTo,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        }
+
+        draft.proposals = draft.proposals || []
+        draft.proposals.push(proposal)
+        createdProposal = proposal
+
+        return draft
+      }
+    )
+
+    return { quest: updatedQuest, proposal: createdProposal! }
+  }
+
+  async acceptProposal(
+    questId: string,
+    proposalId: string,
+    expectedVersion: number
+  ): Promise<Quest> {
+    return await this.repository.updateQuest(questId, expectedVersion, (draft: Quest) => {
+      const proposal = (draft.proposals || []).find((p) => p.id === proposalId)
+      if (!proposal) {
+        throw new ProposalNotFoundError(questId, proposalId)
+      }
+      if (proposal.status !== 'pending') {
+        throw new Error(`PROPOSAL_ALREADY_DECIDED: Proposal "${proposalId}" is already ${proposal.status}.`)
+      }
+
+      // Check mission ID is not duplicate in canonical
+      if (draft.missions.some((m) => m.id === proposal.mission.id)) {
+        throw new Error(`DUPLICATE_MISSION_ID: Mission "${proposal.mission.id}" already exists in quest.`)
+      }
+
+      // 1. Insert mission into canonical missions
+      draft.missions.push(structuredClone(proposal.mission))
+
+      // 2. Insert canonical edges
+      for (const fromId of proposal.connectFrom) {
+        if (!draft.edges.some((e) => e.source === fromId && e.target === proposal.mission.id)) {
+          draft.edges.push({
+            id: `edge_${fromId}_${proposal.mission.id}`,
+            source: fromId,
+            target: proposal.mission.id,
+          })
+        }
+      }
+      for (const toId of proposal.connectTo || []) {
+        if (!draft.edges.some((e) => e.source === proposal.mission.id && e.target === toId)) {
+          draft.edges.push({
+            id: `edge_${proposal.mission.id}_${toId}`,
+            source: proposal.mission.id,
+            target: toId,
+          })
+        }
+        // Update downstream prerequisites
+        const targetMission = draft.missions.find((m) => m.id === toId)
+        if (targetMission && !targetMission.prerequisites.includes(proposal.mission.id)) {
+          targetMission.prerequisites.push(proposal.mission.id)
+        }
+      }
+
+      // 3. Validate updated canonical graph
+      validateQuest(draft)
+
+      // 4. Mark proposal accepted
+      proposal.status = 'accepted'
+      proposal.decidedAt = new Date().toISOString()
+
+      return draft
+    })
+  }
+
+  async rejectProposal(
+    questId: string,
+    proposalId: string,
+    expectedVersion: number
+  ): Promise<Quest> {
+    return await this.repository.updateQuest(questId, expectedVersion, (draft: Quest) => {
+      const proposal = (draft.proposals || []).find((p) => p.id === proposalId)
+      if (!proposal) {
+        throw new ProposalNotFoundError(questId, proposalId)
+      }
+      if (proposal.status !== 'pending') {
+        throw new Error(`PROPOSAL_ALREADY_DECIDED: Proposal "${proposalId}" is already ${proposal.status}.`)
+      }
+
+      proposal.status = 'rejected'
+      proposal.decidedAt = new Date().toISOString()
+      return draft
+    })
+  }
+
   async getQuestStateProjection(id: string): Promise<QuestStateProjectionDTO | null> {
     const quest = await this.repository.getQuest(id)
     if (!quest) return null
 
     const completedSet = new Set(quest.progress.completedMissionIds || [])
+    const pendingProposals = (quest.proposals || []).filter((p) => p.status === 'pending')
 
     const missions = quest.missions.map((m) => {
       let status: 'locked' | 'available' | 'active' | 'completed' = 'locked'
@@ -219,11 +448,20 @@ export class QuestService {
       totalMissions: quest.missions.length,
       completedCount: quest.progress.completedMissionIds?.length || 0,
       activeMissionId: quest.progress.activeMissionId,
+      pendingProposalsCount: pendingProposals.length,
       missions,
       edges: quest.edges.map((e) => ({
         source: e.source,
         target: e.target,
         optional: e.optional,
+      })),
+      proposals: (quest.proposals || []).map((p) => ({
+        id: p.id,
+        status: p.status,
+        missionId: p.mission.id,
+        title: p.mission.title,
+        connectFrom: p.connectFrom,
+        connectTo: p.connectTo,
       })),
     }
   }

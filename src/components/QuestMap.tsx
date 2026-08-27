@@ -23,7 +23,9 @@ import type {
   Mission,
   MissionEvaluationState,
   MissionProgress,
+  ProgressState,
 } from '../domain/course'
+import type { QuestProposal } from '../domain/quest'
 import { deriveEdgeProgress } from '../domain/progression'
 import { CompanionAvatar, type CompanionHandle } from './CompanionAvatar'
 import { JunctionNode } from './JunctionNode'
@@ -49,6 +51,9 @@ interface QuestMapProps {
   activeMissionId?: string
   isEvaluating?: boolean
   isVerifiedAction?: boolean
+  pendingProposals?: QuestProposal[]
+  onAcceptProposal?: (proposalId: string) => Promise<void>
+  onRejectProposal?: (proposalId: string) => Promise<void>
 }
 
 interface JunctionNodeData extends Record<string, unknown> {
@@ -127,6 +132,9 @@ function QuestMapCanvas({
   activeMissionId,
   isEvaluating,
   isVerifiedAction,
+  pendingProposals,
+  onAcceptProposal,
+  onRejectProposal,
 }: QuestMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const companionRef = useRef<CompanionHandle>(null)
@@ -183,10 +191,47 @@ function QuestMapCanvas({
       },
     }))
 
+    const ghostNodes: QuestFlowNode[] = (pendingProposals || []).map((proposal) => ({
+      id: proposal.mission.id,
+      type: 'quest' as const,
+      position: proposal.mission.position,
+      draggable: false,
+      selectable: true,
+      connectable: false,
+      focusable: false,
+      zIndex: 4,
+      data: {
+        mission: {
+          id: proposal.mission.id,
+          title: proposal.mission.title,
+          description: proposal.mission.description,
+          nodeType: proposal.mission.nodeType,
+          mapRole: proposal.mission.mapRole,
+          mapSubtitle: proposal.mission.mapSubtitle,
+          position: proposal.mission.position,
+          prerequisites: proposal.mission.prerequisites,
+          evidenceType: 'text',
+          evidencePrompt: proposal.mission.evidencePrompt,
+          evidenceCriteria: proposal.mission.evaluationContract?.description || '',
+          progressState: 'locked' as ProgressState,
+        },
+        progressState: 'locked' as ProgressState,
+        recommended: false,
+        selected: proposal.mission.id === selectedMissionId,
+        lockedReason: 'Propuesta esperando aprobación humana',
+        onSelect: onMissionSelect,
+        onHover: setHoveredMissionId,
+        isGhost: true,
+        proposalId: proposal.id,
+        onAcceptProposal,
+        onRejectProposal,
+      },
+    }))
+
     const junctionNodes: JunctionFlowNode[] = (chapter.junctions ?? []).map(
       (junction) => ({
         id: junction.id,
-        type: 'junction',
+        type: 'junction' as const,
         position: {
           x: junction.position.x - 3,
           y: junction.position.y - 3,
@@ -204,7 +249,7 @@ function QuestMapCanvas({
     const territoryNodes: TerritoryFlowNode[] = (chapter.regions ?? []).map(
       (region) => ({
         id: region.id,
-        type: 'territory',
+        type: 'territory' as const,
         position: region.position,
         draggable: false,
         selectable: false,
@@ -217,12 +262,15 @@ function QuestMapCanvas({
       }),
     )
 
-    return [...territoryNodes, ...missionNodes, ...junctionNodes]
+    return [...territoryNodes, ...missionNodes, ...ghostNodes, ...junctionNodes]
   }, [
     chapter,
     evaluationStateByMissionId,
     lockedReasons,
+    onAcceptProposal,
     onMissionSelect,
+    onRejectProposal,
+    pendingProposals,
     progress,
     recommendedMissionId,
     selectedMissionId,
@@ -234,7 +282,7 @@ function QuestMapCanvas({
         chapter.missions.map((mission) => [mission.id, mission.nodeType]),
       )
 
-      return chapter.edges.map((edge) => {
+      const canonicalEdges: QuestFlowEdge[] = chapter.edges.map((edge) => {
         const sourceState = progress[edge.source]
         const targetState = progress[edge.target]
         const routeTier =
@@ -249,7 +297,7 @@ function QuestMapCanvas({
           id: edge.id,
           source: edge.source,
           target: edge.target,
-          type: 'quest',
+          type: 'quest' as const,
           focusable: false,
           selectable: false,
           zIndex: 1,
@@ -264,9 +312,55 @@ function QuestMapCanvas({
           },
         }
       })
+
+      const ghostEdges: QuestFlowEdge[] = []
+      for (const proposal of pendingProposals || []) {
+        for (const fromId of proposal.connectFrom) {
+          ghostEdges.push({
+            id: `ghost_edge_${fromId}_${proposal.mission.id}`,
+            source: fromId,
+            target: proposal.mission.id,
+            type: 'quest' as const,
+            focusable: false,
+            selectable: false,
+            zIndex: 1,
+            data: {
+              progressState: 'locked',
+              routeTier: 'future',
+              optional: true,
+              highlighted: hoveredMissionId === fromId || hoveredMissionId === proposal.mission.id,
+              leadsToMilestone: false,
+              isGhost: true,
+            },
+          })
+        }
+        for (const toId of proposal.connectTo || []) {
+          ghostEdges.push({
+            id: `ghost_edge_${proposal.mission.id}_${toId}`,
+            source: proposal.mission.id,
+            target: toId,
+            type: 'quest' as const,
+            focusable: false,
+            selectable: false,
+            zIndex: 1,
+            data: {
+              progressState: 'locked',
+              routeTier: 'future',
+              optional: true,
+              highlighted: hoveredMissionId === proposal.mission.id || hoveredMissionId === toId,
+              leadsToMilestone: false,
+              isGhost: true,
+            },
+          })
+        }
+      }
+
+      return [...canonicalEdges, ...ghostEdges]
     },
-    [chapter.edges, chapter.missions, hoveredMissionId, progress],
+    [chapter.edges, chapter.missions, hoveredMissionId, pendingProposals, progress],
   )
+
+
 
   useEffect(() => {
     if (!selectedMissionId || selectedMissionId === previousMissionIdRef.current) return
