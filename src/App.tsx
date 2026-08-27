@@ -136,6 +136,169 @@ export function App() {
     }
   }, [profile?.learnerImplementationId, profile?.role])
 
+  // WebMCP Smoke Test: Expose create_quest_smoke_test tool on document.modelContext
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+
+    // Ensure document.modelContext exists (native in Chrome/ChatGPT or minimal polyfill container)
+    if (!(document as any).modelContext) {
+      const toolRegistry: any[] = []
+      ;(document as any).modelContext = {
+        registerTool: (toolDef: any, options?: { signal?: AbortSignal }) => {
+          toolRegistry.push(toolDef)
+          if (options?.signal) {
+            options.signal.addEventListener('abort', () => {
+              const idx = toolRegistry.indexOf(toolDef)
+              if (idx !== -1) toolRegistry.splice(idx, 1)
+            })
+          }
+          return {
+            unregister: () => {
+              const idx = toolRegistry.indexOf(toolDef)
+              if (idx !== -1) toolRegistry.splice(idx, 1)
+            },
+          }
+        },
+        getRegisteredTools: () => [...toolRegistry],
+      }
+    }
+
+    const modelContext = (document as any).modelContext ?? (navigator as any).modelContext
+    if (!modelContext?.registerTool) return
+
+    const controller = new AbortController()
+
+    const executeSmokeTest = async ({ goal }: { goal?: string }) => {
+      const goalTitle = goal || 'Analizar inflación en México'
+      const smokeCourse: Course = {
+        id: 'smoke-quest-course',
+        title: goalTitle,
+        chapters: [
+          {
+            id: 'smoke-chapter-1',
+            title: goalTitle,
+            shortTitle: 'Misiones',
+            mapPromise: 'Recorrido dinámico generado vía WebMCP',
+            missions: [
+              {
+                id: 'M1',
+                title: 'Obtener datos de inflación',
+                nodeType: 'normal',
+                mapRole: 'entry',
+                mapSubtitle: 'INEGI / Banxico',
+                progressState: 'available',
+                position: { x: 180, y: 160 },
+                description: 'Descargar e inspeccionar la serie histórica del INPC.',
+                evidenceType: 'text',
+                evidencePrompt: 'Pega el resumen del dataset descargado.',
+                evidenceCriteria: 'Debe contener la serie temporal del INPC.',
+              },
+              {
+                id: 'M2',
+                title: 'Evaluar estacionariedad',
+                nodeType: 'normal',
+                mapSubtitle: 'Test ADF',
+                progressState: 'locked',
+                prerequisites: ['M1'],
+                position: { x: 440, y: 160 },
+                description: 'Aplicar prueba de Dickey-Fuller aumentada (ADF).',
+                evidenceType: 'text',
+                evidencePrompt: 'Pega el estadístico ADF y su p-value.',
+                evidenceCriteria: 'Debe reportar estadístico t y p-valor.',
+              },
+              {
+                id: 'M3',
+                title: 'Interpretar resultado económico',
+                nodeType: 'milestone',
+                mapRole: 'convergence',
+                mapSubtitle: 'Diagnóstico',
+                progressState: 'locked',
+                prerequisites: ['M2'],
+                position: { x: 700, y: 160 },
+                description: 'Explicar las implicaciones macroeconómicas.',
+                evidenceType: 'text',
+                evidencePrompt: 'Pega tu conclusión económica breve.',
+                evidenceCriteria: 'Debe concluir si requiere primeras diferencias.',
+              },
+            ],
+            edges: [
+              { id: 'edge-m1-m2', source: 'M1', target: 'M2' },
+              { id: 'edge-m2-m3', source: 'M2', target: 'M3' },
+            ],
+          },
+        ],
+      }
+
+      setGraphCourse(smokeCourse)
+      setActiveChapterId('smoke-chapter-1')
+      setSelectedMissionId('M1')
+      setGraphProgress({
+        M1: 'available',
+        M2: 'locked',
+        M3: 'locked',
+      })
+      setImplementationState({
+        id: 'impl-smoke',
+        userId: 'guest-learner',
+        courseId: 'smoke-quest-course',
+        completedMissionIds: [],
+        activeMissionId: 'M1',
+        learnerSetup: {
+          goal: goalTitle,
+          availableTime: '15_30_MIN',
+          helpPreference: 'DIRECT',
+          updatedAt: new Date().toISOString(),
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      setProfile({
+        userId: 'guest-learner',
+        displayName: 'Explorador Quest',
+        role: 'learner',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      setProfileLoading(false)
+      setServerError(null)
+
+      return {
+        ok: true,
+        goal: goalTitle,
+        missionCount: 3,
+        missionIds: ['M1', 'M2', 'M3'],
+      }
+    }
+
+    try {
+      modelContext.registerTool(
+        {
+          name: 'create_quest_smoke_test',
+          description: 'Creates a temporary 3-node quest on the live canvas for WebMCP smoke testing.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              goal: { type: 'string', description: 'The user goal (e.g. Analyze Mexican inflation)' },
+            },
+            required: ['goal'],
+          },
+          execute: executeSmokeTest,
+        },
+        { signal: controller.signal },
+      )
+
+      // Expose debug invoker on window for automated/manual tests
+      ;(window as any).__trazo_invoke_smoke_test = executeSmokeTest
+    } catch (err) {
+      console.warn('[WebMCP] Failed to register smoke test tool:', err)
+    }
+
+    return () => {
+      controller.abort()
+      delete (window as any).__trazo_invoke_smoke_test
+    }
+  }, [])
+
   const resetProfileScopedState = useCallback(() => {
     setActiveChapterId(course.chapters[0].id)
     setImplementationId('')

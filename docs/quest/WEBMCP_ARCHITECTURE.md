@@ -9,7 +9,7 @@
 ## 1. WebMCP Mental Model: Browser-Native Tool Surface
 
 ### 1.1 What WebMCP Is
-WebMCP (Web Model Context Protocol) is a standard allowing a web application running in a browser to expose structured JavaScript tools and context directly to an external AI agent (such as ChatGPT, Operator, or an AI-enabled browser engine).
+WebMCP (Web Model Context Protocol) is an experimental browser standard that provides a structured alternative to visual UI actuation for capabilities explicitly exposed by the site, enabling a web application running in a browser to expose structured JavaScript tools directly to an external AI agent (such as ChatGPT or an AI-enabled browser engine).
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -20,7 +20,7 @@ WebMCP (Web Model Context Protocol) is a standard allowing a web application run
 ┌────────────────────────────────────────────────────────────────────────┐
 │                     BROWSER RUNTIME (DOM / PAGE)                       │
 │                                                                        │
-│   window.navigator.modelContext  /  siteTools                          │
+│   document.modelContext  /  siteTools                                  │
 │   ├── create_quest_path                                                │
 │   ├── get_quest_state                                                  │
 │   ├── propose_mission                                                  │
