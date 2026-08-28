@@ -1,0 +1,15 @@
+.gcloudignore
+.git
+.gitignore
+node_modules/
+dist/
+.env
+.env.*
+*.local
+*.tsbuildinfo
+.vite/
+.data/
+.playwright-cli/
+output/
+test-results/
+tmp/
