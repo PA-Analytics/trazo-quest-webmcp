@@ -26,10 +26,10 @@ export type DeterministicRuleOperator =
   | 'between'
   | 'exists'
   | 'contains'
-  | 'regex'
   | 'numeric_range'
   | 'json_schema'
   | 'contains_all'
+
 
 export type DeterministicRuleType = DeterministicRuleOperator
 

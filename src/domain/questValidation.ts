@@ -44,7 +44,6 @@ export function validateEvaluationContract(contract: EvaluationContract, mission
     for (const [idx, rule] of contract.deterministicRules.entries()) {
       const ruleType = rule.operator || rule.type || ''
       const validRuleTypes = [
-        'regex',
         'json_schema',
         'numeric_range',
         'contains_all',
@@ -58,6 +57,7 @@ export function validateEvaluationContract(contract: EvaluationContract, mission
         'exists',
         'contains',
       ]
+
       if (!validRuleTypes.includes(ruleType)) {
         throw new QuestValidationError(
           'INVALID_DETERMINISTIC_RULE_TYPE',

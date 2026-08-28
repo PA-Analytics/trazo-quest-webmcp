@@ -89,18 +89,8 @@ export function evaluateDeterministicRules(
         passed = required.length > 0 && required.every((req) => targetStr.includes(req.toLowerCase()))
         break
       }
-      case 'regex': {
-        if (rule.pattern && typeof rule.pattern === 'string' && rule.pattern.length <= 256) {
-          try {
-            const regex = new RegExp(rule.pattern, 'i')
-            passed = regex.test(String(dataVal !== undefined ? dataVal : textVal || ''))
-          } catch {
-            passed = false
-          }
-        }
-        break
-      }
       case 'json_schema': {
+
         passed = typeof evidence.data === 'object' && evidence.data !== null
         break
       }

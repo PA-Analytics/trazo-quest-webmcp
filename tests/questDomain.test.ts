@@ -37,9 +37,9 @@ function createSampleQuest(overrides?: Partial<Quest>): Quest {
           description: 'Verifica presencia de columnas de tiempo e índice.',
           deterministicRules: [
             {
-              type: 'regex',
-              pattern: '(INPC|fecha|indice)',
-              failureMessage: 'Debe contener referencias a INPC o fecha.',
+              type: 'contains',
+              pattern: 'INPC',
+              failureMessage: 'Debe contener referencias a INPC.',
             },
           ],
         },
@@ -58,11 +58,12 @@ function createSampleQuest(overrides?: Partial<Quest>): Quest {
           description: 'Verifica test estadístico y razonamiento de raíz unitaria.',
           deterministicRules: [
             {
-              type: 'regex',
-              pattern: '(ADF|Dickey-Fuller|p-value)',
+              type: 'contains',
+              pattern: 'ADF',
               failureMessage: 'Debe incluir salida de prueba ADF.',
             },
           ],
+
           rubricCriteria: [
             {
               id: 'c1_adf_interpretation',
@@ -263,8 +264,8 @@ test('CONTRACT: EvaluationContract survives JSON roundtrip without mutation', ()
     confidenceThreshold: 0.75,
     deterministicRules: [
       {
-        type: 'regex',
-        pattern: '(-?\\d+\\.\\d+)',
+        type: 'contains',
+        pattern: '0.05',
         failureMessage: 'Test statistic required',
       },
     ],
@@ -309,13 +310,14 @@ test('PROPOSALS: Creating a proposal does not alter canonical missions or edges'
         description: 'Verifica reporte de prueba ARCH.',
         deterministicRules: [
           {
-            type: 'regex',
-            pattern: '(ARCH|Heteroskedasticity|LM)',
+            type: 'contains',
+            pattern: 'ARCH',
             failureMessage: 'Debe reportar prueba ARCH.',
           },
         ],
       },
     },
+
     connectFrom: ['M02'],
     status: 'pending',
     createdAt: new Date().toISOString(),
