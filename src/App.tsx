@@ -168,7 +168,7 @@ export function App() {
   // ─── WEBMCP TOOLS: CREATE & GET QUEST ────────────────────────────────────
   useWebMCPTool({
     name: 'create_quest',
-    description: 'Initializes a new authoritative quest graph from a learning or execution goal.',
+    description: 'Create a new persistent TRAZO quest from a learner goal and structured missions. This sets the visual roadmap but cannot mark missions complete or unlock progress directly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -272,7 +272,7 @@ export function App() {
 
   useWebMCPTool({
     name: 'get_quest_state',
-    description: 'Get the current authoritative graph topology, progression status, and unlocked missions.',
+    description: 'Get the current authoritative graph topology, mission statuses, completed mission list, and pending reviewable proposals for the active quest.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -336,7 +336,7 @@ export function App() {
 
   useWebMCPTool({
     name: 'propose_quest_change',
-    description: 'Propose a new mission or structural path change to the active quest. The change appears as a non-authoritative Ghost Node awaiting human approval.',
+    description: 'Propose a new reviewable mission or path modification to the active quest. The proposal appears visually in TRAZO as a non-authoritative Ghost Node and does not become part of the canonical graph until the human explicitly accepts it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -426,7 +426,7 @@ export function App() {
 
   useWebMCPTool({
     name: 'focus_mission',
-    description: 'Center and focus the camera on a canonical mission in the active quest canvas, opening its details panel.',
+    description: 'Center and focus the camera viewport on a canonical mission in the active quest canvas, opening its details panel for the human to review or work on.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -479,8 +479,9 @@ export function App() {
 
   useWebMCPTool({
     name: 'submit_evidence',
-    description: 'Submit textual or structured data evidence for a canonical mission in the active quest to be evaluated against its sealed EvaluationContract.',
+    description: 'Submit learner work (text or structured data) for a canonical mission to be evaluated against its sealed EvaluationContract. The tool transports evidence; deterministic policy decides the verdict and progression consequence (PASS / REWORK).',
     inputSchema: {
+
       type: 'object',
       properties: {
         questId: { type: 'string', description: 'Optional quest ID. Defaults to active quest on page.' },

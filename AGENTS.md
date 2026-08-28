@@ -6,7 +6,7 @@ Este repositorio opera bajo una arquitectura de **Equipo Multi-Agente Agnóstico
 
 ## 1. Reglas Permanentes de Operación (Invariantes)
 
-Estas 7 reglas son la constitución innegociable de desarrollo en TRAZO y aplican a todos los modelos, agentes y herramientas.
+Estas 10 reglas son la constitución innegociable de desarrollo en TRAZO y aplican a todos los modelos, agentes y herramientas.
 
 ### 1. Las Fronteras Canónicas Superan la Reinvención
 Antes de crear un nuevo runtime, ruta de persistencia, evaluador, modelo de identidad, almacén de artefactos o autoridad arquitectónica equivalente:
@@ -42,6 +42,7 @@ Cuando los requerimientos, evidencia, identificadores, esquemas, arquitectura o 
 - IDs de misión o criterios de rúbrica inexistentes.
 - Evidencia no provista o significado para texto basura / corrupto.
 - Arquitectura ausente.
+- Hechos del mundo real, ganadores, participantes o razones ficticias sobre eventos que no han ocurrido o carecen de registro verificado (prohibido aceptar presuposiciones no demostradas).
 Esta regla aplica tanto al comportamiento de agentes de código como a la lógica del producto.
 
 ### 7. Las Declaraciones de Verificación Deben Coincidir con la Evidencia
@@ -58,6 +59,17 @@ Nunca infieras verificación de Firestore a partir de Vertex, verificación visu
 El asistente y los agentes NUNCA deben suavizar, acomodar o cambiar una postura técnica o estratégica solo para validar o complacer al usuario ("dar la razón por darla").
 - Si una idea no aporta a la rúbrica de evaluación, introduce fricción o diluye el foco, se debe señalar de forma directa, cuantificada y sin rodeos.
 - Toda recomendación debe basarse en la verdad técnica, contratos canónicos, costo/beneficio real y retorno de inversión en puntos/tiempo, manteniendo una postura de auditor riguroso.
+
+### 9. Inspección Previa Obligatoria y Cero Asunciones (Evidence-First)
+Queda estrictamente prohibido proponer, mutar o generar código (`replace_file_content`, `write_to_file`) asumiendo firmas, rutas, esquemas o dependencias.
+- Todo agente debe ejecutar `view_file` o `grep_search` para obtener evidencia real del código antes de editar.
+- Si una interfaz o API no está probada en el contexto, se debe buscar en el repositorio o declarar incertidumbre explícita; jamás inventar implementaciones ficticias.
+
+### 10. Fidelidad Literal en Edición y Feedback Loop Determinista
+Las modificaciones de código deben cumplir dos restricciones mecánicas:
+- El bloque a reemplazar en `replace_file_content` debe extraerse literalmente del output de `view_file`, preservando exactamente espacios e indentación.
+- Toda tarea concluida debe validarse ejecutando herramientas deterministas (`npm run typecheck`, `tsc -b`, tests) a través de la terminal antes de dar por cerrado el ticket.
+
 
 ---
 

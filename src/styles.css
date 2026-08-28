@@ -3676,3 +3676,89 @@ textarea:focus-visible {
   font-size: 0.82rem;
   line-height: 1.4;
 }
+
+/* --- Ghost Node & Collaboration Proposals (Paper / Ink / Indigo / Cobalt Tokens) --- */
+.quest-node--ghost .quest-node-shape {
+  border: 2px dashed var(--trazo-indigo);
+  background: color-mix(in srgb, var(--trazo-indigo) 6%, var(--trazo-paper-warm));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--trazo-indigo) 12%, transparent);
+}
+
+.quest-node--ghost .quest-node-depth {
+  background: color-mix(in srgb, var(--trazo-indigo) 20%, transparent);
+  border: 1px dashed var(--trazo-indigo);
+}
+
+.quest-node-ghost-pill {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--trazo-indigo);
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--trazo-ink) 25%, transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ghost-node-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--trazo-indigo);
+}
+
+.ghost-node-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  justify-content: center;
+  z-index: 5;
+}
+
+.ghost-action-btn {
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease-in-out;
+}
+
+.ghost-action-btn--accept {
+  background: var(--trazo-ink);
+  color: #ffffff;
+  border-color: var(--trazo-ink);
+}
+
+.ghost-action-btn--accept:hover {
+  background: color-mix(in srgb, var(--trazo-ink) 85%, #000);
+  transform: translateY(-1px);
+}
+
+.ghost-action-btn--reject {
+  background: var(--trazo-paper-warm);
+  color: var(--trazo-muted);
+  border-color: var(--trazo-line);
+}
+
+.ghost-action-btn--reject:hover {
+  background: color-mix(in srgb, var(--trazo-paper-warm) 85%, var(--trazo-line));
+  color: var(--trazo-ink);
+  transform: translateY(-1px);
+}
+
+.quest-edge-path[data-ghost="true"] {
+  stroke-dasharray: 6 6;
+  stroke: var(--trazo-indigo);
+  opacity: 0.85;
+}
+

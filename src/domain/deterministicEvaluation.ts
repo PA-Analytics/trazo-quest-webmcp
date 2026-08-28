@@ -44,22 +44,22 @@ export function evaluateDeterministicRules(
       }
       case 'greater_than': {
         const minVal = rule.minValue !== undefined ? rule.minValue : rule.min
-        passed = typeof dataVal === 'number' && minVal !== undefined && dataVal > minVal
+        passed = typeof dataVal === 'number' && Number.isFinite(dataVal) && minVal !== undefined && Number.isFinite(minVal) && dataVal > minVal
         break
       }
       case 'greater_than_or_equal': {
         const minVal = rule.minValue !== undefined ? rule.minValue : rule.min
-        passed = typeof dataVal === 'number' && minVal !== undefined && dataVal >= minVal
+        passed = typeof dataVal === 'number' && Number.isFinite(dataVal) && minVal !== undefined && Number.isFinite(minVal) && dataVal >= minVal
         break
       }
       case 'less_than': {
         const maxVal = rule.maxValue !== undefined ? rule.maxValue : rule.max
-        passed = typeof dataVal === 'number' && maxVal !== undefined && dataVal < maxVal
+        passed = typeof dataVal === 'number' && Number.isFinite(dataVal) && maxVal !== undefined && Number.isFinite(maxVal) && dataVal < maxVal
         break
       }
       case 'less_than_or_equal': {
         const maxVal = rule.maxValue !== undefined ? rule.maxValue : rule.max
-        passed = typeof dataVal === 'number' && maxVal !== undefined && dataVal <= maxVal
+        passed = typeof dataVal === 'number' && Number.isFinite(dataVal) && maxVal !== undefined && Number.isFinite(maxVal) && dataVal <= maxVal
         break
       }
       case 'between':
@@ -68,8 +68,11 @@ export function evaluateDeterministicRules(
         const maxVal = rule.maxValue !== undefined ? rule.maxValue : rule.max
         passed =
           typeof dataVal === 'number' &&
+          Number.isFinite(dataVal) &&
           minVal !== undefined &&
+          Number.isFinite(minVal) &&
           maxVal !== undefined &&
+          Number.isFinite(maxVal) &&
           dataVal >= minVal &&
           dataVal <= maxVal
         break
@@ -87,7 +90,7 @@ export function evaluateDeterministicRules(
         break
       }
       case 'regex': {
-        if (rule.pattern) {
+        if (rule.pattern && typeof rule.pattern === 'string' && rule.pattern.length <= 256) {
           try {
             const regex = new RegExp(rule.pattern, 'i')
             passed = regex.test(String(dataVal !== undefined ? dataVal : textVal || ''))

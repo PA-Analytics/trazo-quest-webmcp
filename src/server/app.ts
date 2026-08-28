@@ -11,7 +11,12 @@ import { GeminiEvidenceInterpreter } from './evaluator/geminiInterpreter.ts'
 import { createCanonicalGeminiRuntime, type CanonicalGeminiRuntime } from './ai/runtime.ts'
 import { AutonomyService } from './autonomy/autonomyService.ts'
 import { GeminiAutonomyReasoner } from './autonomy/geminiReasoner.ts'
-import { createAutonomyAuditRepository } from './repository.ts'
+import {
+  createAutonomyAuditRepository,
+  createCalibrationRepository,
+  createImplementationRepository,
+  createMethodologyRepository,
+} from './repository.ts'
 import type { IdentityService } from './identityService.ts'
 import { ImplementationService } from './service.ts'
 import { MethodologyService } from './methodologyService.ts'
@@ -387,9 +392,19 @@ async function parseBody<T>(req: IncomingMessage): Promise<T> {
 }
 
 export function createRequestListener(
-  service: ImplementationService,
-  options: ServerOptions = {},
+  serviceOrOptions?: ImplementationService | ServerOptions,
+  maybeOptions: ServerOptions = {},
 ) {
+  const isImplService = serviceOrOptions instanceof ImplementationService
+  const options = isImplService ? maybeOptions : ((serviceOrOptions as ServerOptions) || {})
+  const service = isImplService
+    ? serviceOrOptions
+    : new ImplementationService(
+        createImplementationRepository('memory'),
+        createCalibrationRepository('memory'),
+        new MethodologyService(createMethodologyRepository('memory'), createCalibrationRepository('memory'))
+      )
+
   const isDevRoutesEnabled =
     options.enableDevRoutes !== undefined
       ? options.enableDevRoutes
