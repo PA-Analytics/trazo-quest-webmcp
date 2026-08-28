@@ -8,8 +8,8 @@ interface HudBarProps {
   completed: number
   total: number
   activeMissionTitle?: string
-  profile: UserProfile
-  onProfileOpen: () => void
+  profile?: UserProfile
+  onProfileOpen?: () => void
   onRecenter: () => void
 }
 
@@ -53,7 +53,9 @@ export function HudBar({
         >
           <CenterIcon />
         </button>
-        <ProfileSwitcher profile={profile} onOpen={onProfileOpen} />
+        {profile && onProfileOpen && (
+          <ProfileSwitcher profile={profile} onOpen={onProfileOpen} />
+        )}
       </div>
     </header>
   )

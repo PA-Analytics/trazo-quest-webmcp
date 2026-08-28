@@ -54,6 +54,7 @@ interface QuestMapProps {
   pendingProposals?: QuestProposal[]
   onAcceptProposal?: (proposalId: string) => Promise<void>
   onRejectProposal?: (proposalId: string) => Promise<void>
+  emptyState?: ReactNode
 }
 
 interface JunctionNodeData extends Record<string, unknown> {
@@ -135,6 +136,7 @@ function QuestMapCanvas({
   pendingProposals,
   onAcceptProposal,
   onRejectProposal,
+  emptyState,
 }: QuestMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const companionRef = useRef<CompanionHandle>(null)
@@ -531,22 +533,25 @@ function QuestMapCanvas({
         aria-label="Mapa visual de misiones"
         proOptions={{ hideAttribution: true }}
       >
-        <ViewportOverlay containerRef={mapContainerRef}>
-          <CompanionAvatar
-            ref={companionRef}
-            initialPosition={companionInitialPos}
-            userId={userId}
-            implementationId={implementationId}
-            activeMissionId={activeMissionId}
-            availableMissions={availableMissions}
-            onStartMission={onStartMission}
-            onSelectMission={onMissionSelect}
-            onRecommendationChange={onRecommendationChange}
-            isEvaluating={isEvaluating}
-            isVerifiedAction={isVerifiedAction}
-          />
-        </ViewportOverlay>
+        {chapter.missions.length > 0 && implementationId && (
+          <ViewportOverlay containerRef={mapContainerRef}>
+            <CompanionAvatar
+              ref={companionRef}
+              initialPosition={companionInitialPos}
+              userId={userId}
+              implementationId={implementationId}
+              activeMissionId={activeMissionId}
+              availableMissions={availableMissions}
+              onStartMission={onStartMission}
+              onSelectMission={onMissionSelect}
+              onRecommendationChange={onRecommendationChange}
+              isEvaluating={isEvaluating}
+              isVerifiedAction={isVerifiedAction}
+            />
+          </ViewportOverlay>
+        )}
       </ReactFlow>
+      {emptyState}
       <MapControls
         zoom={cameraZoom}
         disabled={!instance}

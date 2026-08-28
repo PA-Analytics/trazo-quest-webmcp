@@ -66,6 +66,14 @@ textarea:focus-visible {
   background: var(--trazo-bg);
 }
 
+.app-shell--quest {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell--empty-quest .map-stage {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .chapter-navigation {
   position: relative;
   z-index: 10;
@@ -334,6 +342,94 @@ textarea:focus-visible {
   min-width: 0;
   min-height: 0;
   background: var(--trazo-bg);
+}
+
+.quest-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.quest-empty-state__message {
+  position: relative;
+  width: min(640px, calc(100% - 48px));
+  padding-left: 32px;
+  border-left: 4px solid var(--trazo-indigo);
+}
+
+.quest-empty-state__message > p:first-child {
+  margin: 0 0 12px;
+  color: var(--trazo-indigo);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.quest-empty-state__message h1 {
+  max-width: 540px;
+  margin: 0;
+  font-size: clamp(3rem, 8vw, 6.5rem);
+  font-weight: 400;
+  line-height: 0.92;
+}
+
+.quest-empty-state__message p:not(:first-child) {
+  max-width: 500px;
+  margin: 24px 0 8px;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  line-height: 1.5;
+}
+
+.quest-empty-state__message > span {
+  color: var(--trazo-muted);
+  font-size: 0.9rem;
+}
+
+.quest-empty-state__origin {
+  position: absolute;
+  left: clamp(32px, 13vw, 180px);
+  bottom: clamp(56px, 16vh, 160px);
+  width: 112px;
+  height: 2px;
+  background: var(--trazo-ink);
+}
+
+.quest-empty-state__origin::before,
+.quest-empty-state__origin::after {
+  position: absolute;
+  top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  content: "";
+}
+
+.quest-empty-state__origin::before {
+  left: 0;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--trazo-ink);
+  background: var(--trazo-paper);
+}
+
+.quest-empty-state__origin::after {
+  left: 56px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--trazo-indigo);
+  background: var(--trazo-indigo);
+}
+
+@media (max-width: 640px) {
+  .quest-empty-state__message {
+    padding-left: 20px;
+  }
+
+  .quest-empty-state__origin {
+    bottom: 96px;
+  }
 }
 
 .quest-map:focus-visible {

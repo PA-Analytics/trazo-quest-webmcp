@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { ChapterNavigation } from './components/ChapterNavigation'
 import { HudBar } from './components/HudBar'
 import { MissionPanel } from './components/MissionPanel'
+import { QuestEmptyState } from './components/QuestEmptyState'
 import { QuestMap } from './components/QuestMap'
 import { CreatorCalibrationView } from './components/CreatorCalibrationView'
 import { CoachIntro } from './components/CoachIntro'
@@ -80,7 +81,23 @@ function selectDemoPackId(): string {
   return requested
 }
 
+const EMPTY_QUEST_CHAPTER: Chapter = {
+  id: 'quest_empty',
+  title: 'TRAZO Quest',
+  shortTitle: 'Quest',
+  mapPromise: 'Una ruta creada desde ChatGPT aparecerá aquí.',
+  missions: [],
+  edges: [],
+}
+
+const EMPTY_QUEST_COURSE: Course = {
+  id: 'quest_empty',
+  title: 'TRAZO Quest',
+  chapters: [EMPTY_QUEST_CHAPTER],
+}
+
 export function App() {
+  const isQuestProduct = import.meta.env.VITE_PRODUCT_MODE !== 'programs'
   const [activeQuest, setActiveQuest] = useState<Quest | null>(null)
   const [selectedPackId] = useState(() => selectDemoPackId())
   const staticCourse = useMemo(() => resolvePack(selectedPackId), [selectedPackId])
@@ -91,7 +108,7 @@ export function App() {
     return activeQuest ? adaptQuestToMap(activeQuest) : null
   }, [activeQuest])
 
-  const course = questViewModel?.course ?? graphCourse ?? staticCourse
+  const course = questViewModel?.course ?? (isQuestProduct ? EMPTY_QUEST_COURSE : graphCourse ?? staticCourse)
   const [activeUserId, setActiveUserId] = useState(() => localStorage.getItem('trazo_active_user_id') || '')
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(() => Boolean(localStorage.getItem('trazo_active_user_id')))
@@ -128,6 +145,11 @@ export function App() {
             const data = (await res.json()) as Quest
             setActiveQuest(data)
             setSelectedMissionId(data.progress.activeMissionId || data.missions[0]?.id || null)
+            return
+          }
+
+          if (res.status === 404 && localStorage.getItem('trazo_active_quest_id') === requestedQuestId) {
+            localStorage.removeItem('trazo_active_quest_id')
           }
         })
         .catch((err) => console.warn('[TRAZO] Failed to load stored quest:', err))
@@ -255,6 +277,8 @@ export function App() {
       setProfileLoading(false)
       setServerError(null)
 
+      const createdProgress = adaptQuestToMap(createdQuest).progress
+
       return {
         ok: true,
         questId: createdQuest.id,
@@ -264,7 +288,7 @@ export function App() {
         missions: createdQuest.missions.map((m) => ({
           id: m.id,
           title: m.title,
-          status: m.id === createdQuest.progress.activeMissionId ? 'active' : 'locked',
+          status: createdProgress[m.id],
         })),
       }
     },
@@ -736,8 +760,8 @@ export function App() {
     course.chapters.find((chapter) => chapter.id === activeChapterId) ?? course.chapters[0]
 
   const progress = useMemo(
-    () => graphProgress ?? deriveMissionProgress(activeChapter.missions, completedMissionIds),
-    [activeChapter.missions, completedMissionIds, graphProgress],
+    () => questViewModel?.progress ?? graphProgress ?? deriveMissionProgress(activeChapter.missions, completedMissionIds),
+    [activeChapter.missions, completedMissionIds, graphProgress, questViewModel?.progress],
   )
 
   const availableMissions = useMemo(
@@ -1052,6 +1076,31 @@ export function App() {
   )
 
   if (!activeQuest) {
+    if (isQuestProduct) {
+      return (
+        <div className="app-shell app-shell--quest app-shell--empty-quest">
+          <main className="map-stage">
+            <QuestMap
+              userId="guest-learner"
+              chapter={activeChapter}
+              progress={visualProgress}
+              evaluationStateByMissionId={evaluationStateByMissionId}
+              recommendedMissionId={null}
+              selectedMissionId={null}
+              lockedReasons={lockedReasons}
+              recenterRequest={recenterRequest}
+              onMissionSelect={handleMissionSelect}
+              implementationId=""
+              availableMissions={[]}
+              onStartMission={handleStartMission}
+              onRecommendationChange={setRecommendedMissionId}
+              emptyState={<QuestEmptyState />}
+            />
+          </main>
+        </div>
+      )
+    }
+
     if (!activeUserId) {
       return <IdentityEntry onComplete={handleIdentityComplete} />
     }
@@ -1165,12 +1214,14 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
-      <ChapterNavigation
-        course={course}
-        activeChapterId={activeChapter.id}
-        onChapterSelect={handleChapterSelect}
-      />
+    <div className={`app-shell${isQuestProduct ? ' app-shell--quest' : ''}`}>
+      {!isQuestProduct && (
+        <ChapterNavigation
+          course={course}
+          activeChapterId={activeChapter.id}
+          onChapterSelect={handleChapterSelect}
+        />
+      )}
       <main className="map-stage">
         <HudBar
           chapterNumber={activeChapter.shortTitle}
@@ -1178,8 +1229,8 @@ export function App() {
           completed={completedCount}
           total={activeChapter.missions.length}
           activeMissionTitle={activeMission?.title}
-          profile={effectiveProfile}
-          onProfileOpen={() => setShowProfileSelection(true)}
+          profile={isQuestProduct ? undefined : effectiveProfile}
+          onProfileOpen={isQuestProduct ? undefined : () => setShowProfileSelection(true)}
           onRecenter={() => setRecenterRequest((request) => request + 1)}
         />
         <QuestMap
