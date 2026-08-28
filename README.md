@@ -69,7 +69,8 @@ TRAZO Quest registers exactly **5 WebMCP tools** on the active page:
 ## Evaluation & Progression Engine
 
 Progression in TRAZO is strictly deterministic and evidence-grounded:
-1. **Deterministic Rules:** Pure mathematical/schema checks (`equals`, `not_equals`, `greater_than`, `between`, `exists`, `contains`, `regex`). Fast, zero-eval, works 100% offline.
+1. **Deterministic Rules:** Pure mathematical/schema checks (`equals`, `not_equals`, `greater_than`, `greater_than_or_equal`, `less_than`, `less_than_or_equal`, `between`, `numeric_range`, `exists`, `contains`, `contains_all`, `json_schema`). The Hackathon V0 deterministic evaluator does not expose a regex operator, eliminating ReDoS risk from user/agent-supplied deterministic regex rules. Fast, zero-eval, works 100% offline.
+
 2. **Rubric Criteria:** Gemini AI structured interpretation against pre-existing mission criteria.
 3. **Hybrid Contracts:** Mandatory deterministic checks fail-closed. If deterministic rules fail, verdict is `REWORK` regardless of LLM sentiment.
 4. **Sealed Contract Invariant:** Once evidence is submitted against a mission, its contract is frozen into `evaluationContractSnapshot`. Future attempts always evaluate against this frozen lineage, preventing retroactive criteria weakening.
