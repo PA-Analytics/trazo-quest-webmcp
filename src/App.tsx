@@ -424,6 +424,151 @@ export function App() {
     },
   })
 
+  useWebMCPTool({
+    name: 'focus_mission',
+    description: 'Center and focus the camera on a canonical mission in the active quest canvas, opening its details panel.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        missionId: { type: 'string', description: 'Canonical mission ID to focus on (e.g. M1, M2)' },
+      },
+      required: ['missionId'],
+    },
+    annotations: {
+      readOnlyHint: true,
+    },
+    execute: async ({ missionId }: { missionId: string }) => {
+      if (!activeQuest) {
+        return { ok: false, error: 'No active quest on page.' }
+      }
+      const mission = activeQuest.missions.find((m) => m.id === missionId)
+      if (!mission) {
+        const isProposal = (activeQuest.proposals || []).some(
+          (p) => p.status === 'pending' && p.mission.id === missionId
+        )
+        if (isProposal) {
+          return { ok: false, error: `Mission "${missionId}" is a pending proposal and cannot be focused until accepted.` }
+        }
+        return { ok: false, error: `Mission "${missionId}" not found in canonical quest.` }
+      }
+
+      setSelectedMissionId(missionId)
+      setRecenterRequest((prev) => prev + 1)
+
+      const completedSet = new Set(activeQuest.progress.completedMissionIds || [])
+      const status = completedSet.has(mission.id)
+        ? 'completed'
+        : mission.id === activeQuest.progress.activeMissionId
+        ? 'active'
+        : mission.prerequisites.every((p) => completedSet.has(p))
+        ? 'available'
+        : 'locked'
+
+      return {
+        ok: true,
+        mission: {
+          id: mission.id,
+          title: mission.title,
+          status,
+          objective: mission.description,
+          evaluationSummary: mission.evaluationContract?.description || '',
+        },
+      }
+    },
+  })
+
+  useWebMCPTool({
+    name: 'submit_evidence',
+    description: 'Submit textual or structured data evidence for a canonical mission in the active quest to be evaluated against its sealed EvaluationContract.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        questId: { type: 'string', description: 'Optional quest ID. Defaults to active quest on page.' },
+        missionId: { type: 'string', description: 'Mission ID to submit evidence for (e.g. M2)' },
+        expectedVersion: { type: 'number', description: 'Current known version of the quest document.' },
+        evidence: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: 'Text explanation or written response.' },
+            data: { type: 'object', description: 'Optional structured numerical or key-value data.' },
+          },
+        },
+      },
+      required: ['missionId', 'expectedVersion', 'evidence'],
+    },
+    annotations: {
+      readOnlyHint: false,
+    },
+    execute: async (payload: any) => {
+      const targetId = payload.questId || activeQuest?.id || (typeof window !== 'undefined' ? localStorage.getItem('trazo_active_quest_id') : null)
+      if (!targetId) {
+        return { ok: false, error: 'No active quest on page. Call create_quest first.' }
+      }
+
+      const response = await fetch(`/api/v1/quests/${encodeURIComponent(targetId)}/missions/${encodeURIComponent(payload.missionId)}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expectedVersion: payload.expectedVersion,
+          evidence: payload.evidence,
+        }),
+      })
+
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          return {
+            ok: false,
+            code: 'STALE_QUEST_VERSION',
+            expectedVersion: payload.expectedVersion,
+            currentVersion: result.currentVersion,
+            message: result.message || 'Quest changed since your last read. Refresh state before submitting evidence.',
+          }
+        }
+        return {
+          ok: false,
+          code: result.code || 'SUBMISSION_FAILED',
+          error: result.error || `HTTP ${response.status}: Failed to evaluate evidence`,
+        }
+      }
+
+      if (result.quest) {
+        setActiveQuest(result.quest)
+        const statusMap = {
+          PASS: 'pass',
+          CLARIFY: 'clarify',
+          REWORK: 'rework',
+          HUMAN_REVIEW: 'human_review',
+        } as const
+        setEvaluationStateByMissionId((current) => ({
+          ...current,
+          [payload.missionId]: {
+            status: statusMap[result.verdict as keyof typeof statusMap] || 'system_error',
+            interactionType: 'EVIDENCE_SUBMISSION',
+            message: result.feedback,
+            policyVerdict: result.verdict,
+          },
+        }))
+        if (result.verdict === 'PASS') {
+          setAnnouncement(`¡Misión ${payload.missionId} verificada! Desbloqueadas: ${result.unlockedMissionIds?.join(', ') || 'Ninguna'}`)
+        } else {
+          setAnnouncement(`Misión ${payload.missionId} evaluada como ${result.verdict}: ${result.feedback}`)
+        }
+      }
+
+      return {
+        ok: true,
+        questId: targetId,
+        version: result.quest?.version,
+        missionId: payload.missionId,
+        verdict: result.verdict,
+        feedback: result.feedback,
+        unlockedMissionIds: result.unlockedMissionIds || [],
+      }
+    },
+  })
+
   const handleAcceptProposal = useCallback(async (proposalId: string) => {
     if (!activeQuest) return
     try {
@@ -698,16 +843,93 @@ export function App() {
 
   const handleSubmitEvidence = useCallback(
     async (missionId: string) => {
-      if (!['available', 'active', 'submitted', 'completed'].includes(progress[missionId])) return
       const evidenceText = evidenceByMissionId[missionId]?.trim()
       if (!evidenceText) return
-      const recentInteraction = interactionHistoryByMissionId[missionId]?.slice(-4) ?? []
 
       // Set evaluating UI state
       setEvaluationStateByMissionId((current) => ({
         ...current,
         [missionId]: { status: 'evaluating' },
       }))
+
+      if (activeQuest) {
+        try {
+          const res = await fetch(
+            `/api/v1/quests/${encodeURIComponent(activeQuest.id)}/missions/${encodeURIComponent(missionId)}/submit`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                expectedVersion: activeQuest.version,
+                evidence: {
+                  text: evidenceText,
+                },
+              }),
+            }
+          )
+
+          const data = await res.json()
+          if (!res.ok) {
+            if (res.status === 409) {
+              const freshResp = await fetch(`/api/v1/quests/${encodeURIComponent(activeQuest.id)}`)
+              if (freshResp.ok) {
+                const freshQuest = await freshResp.json()
+                setActiveQuest(freshQuest)
+              }
+              alert('El estado del quest cambió. Se sincronizó el mapa; por favor envía tu evidencia nuevamente.')
+              return
+            }
+            throw new Error(data.error || 'Error al evaluar evidencia')
+          }
+
+          if (data.quest) {
+            setActiveQuest(data.quest)
+          }
+
+          const statusMap = {
+            PASS: 'pass',
+            CLARIFY: 'clarify',
+            REWORK: 'rework',
+            HUMAN_REVIEW: 'human_review',
+          } as const
+
+          const evalStatus: EvaluationStatus =
+            statusMap[data.verdict as keyof typeof statusMap] || 'system_error'
+
+          setEvaluationStateByMissionId((current) => ({
+            ...current,
+            [missionId]: {
+              status: evalStatus,
+              interactionType: 'EVIDENCE_SUBMISSION',
+              message: data.feedback,
+              policyVerdict: data.verdict,
+            },
+          }))
+
+          if (data.verdict === 'PASS') {
+            setAnnouncement(
+              `¡Misión ${missionId} completada y verificada! ${
+                data.unlockedMissionIds?.length ? `Desbloqueadas: ${data.unlockedMissionIds.join(', ')}` : ''
+              }`
+            )
+          } else {
+            setAnnouncement(`Evaluación de ${missionId}: ${data.verdict}. ${data.feedback}`)
+          }
+        } catch (err: unknown) {
+          setEvaluationStateByMissionId((current) => ({
+            ...current,
+            [missionId]: {
+              status: 'system_error',
+              systemError: normalizeSubmissionFailure(),
+            },
+          }))
+          setAnnouncement('No pude verificar esto ahora. Tu evidencia sigue disponible.')
+        }
+        return
+      }
+
+      if (!['available', 'active', 'submitted', 'completed'].includes(progress[missionId])) return
+      const recentInteraction = interactionHistoryByMissionId[missionId]?.slice(-4) ?? []
 
       try {
         // TASK-004: Real Verified Action Submission Pipeline

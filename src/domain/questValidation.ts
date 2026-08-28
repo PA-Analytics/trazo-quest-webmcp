@@ -42,11 +42,26 @@ export function validateEvaluationContract(contract: EvaluationContract, mission
     }
 
     for (const [idx, rule] of contract.deterministicRules.entries()) {
-      const validRuleTypes = ['regex', 'json_schema', 'numeric_range', 'contains_all']
-      if (!validRuleTypes.includes(rule.type)) {
+      const ruleType = rule.operator || rule.type || ''
+      const validRuleTypes = [
+        'regex',
+        'json_schema',
+        'numeric_range',
+        'contains_all',
+        'equals',
+        'not_equals',
+        'greater_than',
+        'greater_than_or_equal',
+        'less_than',
+        'less_than_or_equal',
+        'between',
+        'exists',
+        'contains',
+      ]
+      if (!validRuleTypes.includes(ruleType)) {
         throw new QuestValidationError(
           'INVALID_DETERMINISTIC_RULE_TYPE',
-          `Mission "${missionId}" rule[${idx}] has invalid rule type "${rule.type}".`
+          `Mission "${missionId}" rule[${idx}] has invalid rule type "${ruleType}".`
         )
       }
       if (!rule.failureMessage || rule.failureMessage.trim() === '') {

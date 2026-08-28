@@ -39,6 +39,7 @@ import {
   QuestService,
   type CreateQuestDTO,
   type ProposeQuestChangeDTO,
+  type SubmitEvidenceDTO as QuestSubmitEvidenceDTO,
 } from './quest/questService.ts'
 
 const MIME_TYPES: Record<string, string> = {
@@ -661,6 +662,47 @@ export function createRequestListener(
               code: 'REJECT_FAILED',
               error: err instanceof Error ? err.message : 'Reject failed',
             })
+          }
+        }
+        return
+      }
+
+      // ─── SUBMIT EVIDENCE ROUTE ──────────────────────────────────────────
+      const submitMatch = pathname.match(/^\/api\/v1\/quests\/([^/]+)\/missions\/([^/]+)\/submit$/)
+      if (method === 'POST' && submitMatch) {
+        const questId = submitMatch[1]
+        const missionId = submitMatch[2]
+        try {
+          const body = await parseBody<QuestSubmitEvidenceDTO>(req)
+          const result = await questService.submitEvidence(questId, missionId, body)
+          sendJSON(res, 200, {
+            ok: true,
+            quest: result.quest,
+            submission: result.submission,
+            verdict: result.verdict,
+            feedback: result.feedback,
+            unlockedMissionIds: result.unlockedMissionIds,
+          })
+        } catch (err: unknown) {
+          if (err instanceof StaleQuestVersionError) {
+            sendJSON(res, 409, {
+              ok: false,
+              code: 'STALE_QUEST_VERSION',
+              expectedVersion: err.expectedVersion,
+              currentVersion: err.currentVersion,
+              message: 'Quest changed since your last read. Refresh state before submitting evidence.',
+            })
+          } else if (err instanceof QuestNotFoundError) {
+            sendJSON(res, 404, { ok: false, code: 'QUEST_NOT_FOUND', error: err.message })
+          } else {
+            const message = err instanceof Error ? err.message : String(err)
+            if (message.includes('EVALUATION_FAILED')) {
+              sendJSON(res, 503, { ok: false, code: 'EVALUATION_FAILED', error: message })
+            } else if (message.includes('MISSION_NOT_FOUND')) {
+              sendJSON(res, 404, { ok: false, code: 'MISSION_NOT_FOUND', error: message })
+            } else {
+              sendJSON(res, 400, { ok: false, code: 'SUBMISSION_INVALID', error: message })
+            }
           }
         }
         return

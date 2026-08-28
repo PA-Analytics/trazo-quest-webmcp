@@ -1,7 +1,9 @@
 import type {
   EvaluationContract,
+  EvidencePayload,
   Quest,
   QuestEdge,
+  QuestEvidenceSubmission,
   QuestMission,
   QuestNodeType,
   QuestProgress,
@@ -15,8 +17,11 @@ import {
 import {
   type IQuestRepository,
   ProposalNotFoundError,
+  QuestNotFoundError,
+  StaleQuestVersionError,
   createQuestRepository,
 } from './questRepository.ts'
+import { QuestEvaluator } from './questEvaluator.ts'
 
 export interface CreateMissionDTO {
   id?: string
@@ -28,7 +33,10 @@ export interface CreateMissionDTO {
   prerequisites?: string[]
   evidencePrompt?: string
   evaluationContract: EvaluationContract
+  producesArtifacts?: string[]
+  consumesArtifacts?: string[]
 }
+
 
 export interface CreateEdgeDTO {
   id?: string
@@ -60,6 +68,19 @@ export interface ProposeQuestChangeDTO {
   }
   connectFrom: string[]
   connectTo?: string[]
+}
+
+export interface SubmitEvidenceDTO {
+  expectedVersion: number
+  evidence: EvidencePayload
+}
+
+export interface SubmitEvidenceResultDTO {
+  quest: Quest
+  submission: QuestEvidenceSubmission
+  verdict: 'PASS' | 'REWORK' | 'CLARIFY' | 'HUMAN_REVIEW'
+  feedback: string
+  unlockedMissionIds: string[]
 }
 
 export interface QuestStateProjectionDTO {
@@ -99,9 +120,11 @@ export interface QuestStateProjectionDTO {
 
 export class QuestService {
   private readonly repository: IQuestRepository
+  private readonly evaluator: QuestEvaluator
 
-  constructor(repository?: IQuestRepository) {
+  constructor(repository?: IQuestRepository, evaluator?: QuestEvaluator) {
     this.repository = repository || createQuestRepository()
+    this.evaluator = evaluator || new QuestEvaluator()
   }
 
   async createQuest(dto: CreateQuestDTO): Promise<Quest> {
@@ -138,8 +161,11 @@ export class QuestService {
         evidenceType: 'text',
         evidencePrompt: m.evidencePrompt || `Envía la evidencia o conclusión para: ${m.title}`,
         evaluationContract: m.evaluationContract,
+        producesArtifacts: m.producesArtifacts,
+        consumesArtifacts: m.consumesArtifacts,
       }
     })
+
 
     // Normalize edges
     let normalizedEdges: QuestEdge[] = (dto.edges || []).map((e, idx) => ({
@@ -409,6 +435,120 @@ export class QuestService {
     })
   }
 
+  async submitEvidence(
+    questId: string,
+    missionId: string,
+    dto: SubmitEvidenceDTO
+  ): Promise<SubmitEvidenceResultDTO> {
+    if (!dto || typeof dto !== 'object') {
+      throw new Error('INVALID_PAYLOAD: Submission payload is required.')
+    }
+    if (typeof dto.expectedVersion !== 'number') {
+      throw new Error('INVALID_EXPECTED_VERSION: expectedVersion is required.')
+    }
+    if (!dto.evidence || (!dto.evidence.text && !dto.evidence.data)) {
+      throw new Error('EMPTY_EVIDENCE: Evidence text or structured data is required.')
+    }
+
+    // 1. Load Quest snapshot to verify version, access, and sealed contract
+    const currentQuest = await this.repository.getQuest(questId)
+    if (!currentQuest) {
+      throw new QuestNotFoundError(questId)
+    }
+    if (currentQuest.version !== dto.expectedVersion) {
+      throw new StaleQuestVersionError(questId, dto.expectedVersion, currentQuest.version)
+    }
+
+    const mission = currentQuest.missions.find((m) => m.id === missionId)
+    if (!mission) {
+      throw new Error(`MISSION_NOT_FOUND: Mission "${missionId}" does not exist in quest.`)
+    }
+
+    // 2. Sealed Contract Enforcement:
+    // If there is an existing submission for this mission, use its sealed contract snapshot.
+    const priorSubmission = (currentQuest.progress.submissions || []).find((s) => s.missionId === missionId)
+    const sealedContract: EvaluationContract = priorSubmission?.evaluationContractSnapshot || structuredClone(mission.evaluationContract)
+
+    // 3. Execute evaluation
+    const outcome = await this.evaluator.evaluate(sealedContract, dto.evidence, mission)
+
+    let createdSubmission: QuestEvidenceSubmission | null = null
+    let unlockedMissionIds: string[] = []
+
+    // 4. Atomic transaction update
+    const updatedQuest = await this.repository.updateQuest(questId, dto.expectedVersion, (draft: Quest) => {
+      const now = new Date().toISOString()
+      const submission: QuestEvidenceSubmission = {
+        id: `sub_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        questId,
+        missionId,
+        submittedAt: now,
+        content: dto.evidence,
+        evaluationContractSnapshot: sealedContract,
+        verdict: outcome.verdict,
+        feedback: outcome.feedback,
+        criterionResults: outcome.criterionResults,
+        ruleResults: outcome.ruleResults,
+      }
+
+      draft.progress.submissions = draft.progress.submissions || []
+      draft.progress.submissions.push(submission)
+      createdSubmission = submission
+
+      if (outcome.verdict === 'PASS') {
+        const completedSet = new Set(draft.progress.completedMissionIds || [])
+        const previouslyCompleted = completedSet.has(missionId)
+
+        if (!previouslyCompleted) {
+          draft.progress.completedMissionIds.push(missionId)
+          completedSet.add(missionId)
+
+          // Materialize canonical artifact if declared
+          if (mission.producesArtifacts && mission.producesArtifacts.length > 0) {
+            draft.progress.artifacts = draft.progress.artifacts || {}
+            for (const key of mission.producesArtifacts) {
+              draft.progress.artifacts[key] = {
+                key,
+                sourceMissionId: missionId,
+                value: dto.evidence.data || dto.evidence.text,
+                createdAt: now,
+              }
+            }
+          }
+
+          // Compute newly available missions (unlocks)
+          const newUnlocks: string[] = []
+          for (const m of draft.missions) {
+            if (
+              !completedSet.has(m.id) &&
+              m.id !== missionId &&
+              m.prerequisites.length > 0 &&
+              m.prerequisites.every((p) => completedSet.has(p))
+            ) {
+              newUnlocks.push(m.id)
+            }
+          }
+          unlockedMissionIds = newUnlocks
+
+          // Update activeMissionId if current completed
+          if (draft.progress.activeMissionId === missionId && newUnlocks.length > 0) {
+            draft.progress.activeMissionId = newUnlocks[0]
+          }
+        }
+      }
+
+      return draft
+    })
+
+    return {
+      quest: updatedQuest,
+      submission: createdSubmission!,
+      verdict: outcome.verdict,
+      feedback: outcome.feedback,
+      unlockedMissionIds,
+    }
+  }
+
   async getQuestStateProjection(id: string): Promise<QuestStateProjectionDTO | null> {
     const quest = await this.repository.getQuest(id)
     if (!quest) return null
@@ -466,3 +606,4 @@ export class QuestService {
     }
   }
 }
+

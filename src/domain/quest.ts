@@ -16,15 +16,37 @@ export type QuestProgressState =
 
 export type EvaluationContractType = 'deterministic' | 'rubric' | 'hybrid'
 
-export type DeterministicRuleType = 'regex' | 'json_schema' | 'numeric_range' | 'contains_all'
+export type DeterministicRuleOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'greater_than'
+  | 'greater_than_or_equal'
+  | 'less_than'
+  | 'less_than_or_equal'
+  | 'between'
+  | 'exists'
+  | 'contains'
+  | 'regex'
+  | 'numeric_range'
+  | 'json_schema'
+  | 'contains_all'
+
+export type DeterministicRuleType = DeterministicRuleOperator
 
 export interface DeterministicRule {
-  type: DeterministicRuleType
-  pattern?: string
+  type?: DeterministicRuleOperator
+  operator?: DeterministicRuleOperator
   field?: string
+  targetField?: string
+  expectedValue?: unknown
+  pattern?: string
   min?: number
   max?: number
+  minValue?: number
+  maxValue?: number
+  requiredElements?: string[]
   failureMessage: string
+  isRequired?: boolean
 }
 
 export interface QuestRubricCriterion {
@@ -40,6 +62,32 @@ export interface EvaluationContract {
   deterministicRules?: DeterministicRule[]
   rubricCriteria?: QuestRubricCriterion[]
   confidenceThreshold?: number // default 0.70
+}
+
+export interface EvidencePayload {
+  text?: string
+  data?: Record<string, unknown>
+}
+
+export interface QuestEvidenceSubmission {
+  id: string
+  questId: string
+  missionId: string
+  submittedAt: string
+  content: EvidencePayload
+  evaluationContractSnapshot: EvaluationContract
+  verdict: 'PASS' | 'REWORK' | 'CLARIFY' | 'HUMAN_REVIEW'
+  feedback: string
+  criterionResults?: Array<{
+    criterionId: string
+    status: 'PASS' | 'NOT_MET' | 'UNVERIFIABLE'
+    reason: string
+  }>
+  ruleResults?: Array<{
+    ruleIndex: number
+    passed: boolean
+    message: string
+  }>
 }
 
 export interface QuestMission {
@@ -111,5 +159,7 @@ export interface QuestProgress {
   completedMissionIds: string[]
   activeMissionId?: string
   artifacts: Record<string, QuestArtifact>
+  submissions?: QuestEvidenceSubmission[]
   updatedAt: string
 }
+
