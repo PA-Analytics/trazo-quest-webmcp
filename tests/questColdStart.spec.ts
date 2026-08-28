@@ -121,6 +121,11 @@ test('fresh storage registers all five WebMCP tools before interaction', async (
     'propose_quest_change',
     'submit_evidence',
   ])
+  const createToolDefinition = await page.evaluate(() => JSON.stringify((
+    window as typeof window & { __trazoTools: Map<string, unknown> }
+  ).__trazoTools.get('create_quest')))
+  expect(createToolDefinition).toContain('rubricCriteria')
+  expect(createToolDefinition).toContain('deterministicRules')
   await expectNoLegacyRender(page)
 })
 

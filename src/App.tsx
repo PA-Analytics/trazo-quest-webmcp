@@ -96,6 +96,62 @@ const EMPTY_QUEST_COURSE: Course = {
   chapters: [EMPTY_QUEST_CHAPTER],
 }
 
+const EVALUATION_CONTRACT_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    type: { type: 'string', enum: ['deterministic', 'rubric', 'hybrid'] },
+    description: { type: 'string' },
+    rubricCriteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          label: { type: 'string' },
+          description: { type: 'string' },
+          isRequired: { type: 'boolean' },
+        },
+        required: ['id', 'label', 'description', 'isRequired'],
+      },
+    },
+    deterministicRules: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          operator: {
+            type: 'string',
+            enum: [
+              'equals',
+              'not_equals',
+              'greater_than',
+              'greater_than_or_equal',
+              'less_than',
+              'less_than_or_equal',
+              'between',
+              'exists',
+              'contains',
+              'numeric_range',
+              'json_schema',
+              'contains_all',
+            ],
+          },
+          field: { type: 'string' },
+          expectedValue: {},
+          min: { type: 'number' },
+          max: { type: 'number' },
+          requiredElements: { type: 'array', items: { type: 'string' } },
+          failureMessage: { type: 'string' },
+          isRequired: { type: 'boolean' },
+        },
+        required: ['operator', 'failureMessage'],
+      },
+    },
+    confidenceThreshold: { type: 'number', minimum: 0, maximum: 1 },
+  },
+  required: ['type', 'description'],
+} as const
+
 export function App() {
   const isQuestProduct = import.meta.env.VITE_PRODUCT_MODE !== 'programs'
   const [activeQuest, setActiveQuest] = useState<Quest | null>(null)
@@ -214,14 +270,7 @@ export function App() {
               nodeType: { type: 'string', enum: ['normal', 'optional', 'milestone'] },
               prerequisites: { type: 'array', items: { type: 'string' } },
               evidencePrompt: { type: 'string' },
-              evaluationContract: {
-                type: 'object',
-                properties: {
-                  type: { type: 'string', enum: ['deterministic', 'rubric', 'hybrid'] },
-                  description: { type: 'string' },
-                },
-                required: ['type', 'description'],
-              },
+              evaluationContract: EVALUATION_CONTRACT_INPUT_SCHEMA,
             },
             required: ['title', 'evaluationContract'],
           },
@@ -375,14 +424,7 @@ export function App() {
             objective: { type: 'string' },
             mapSubtitle: { type: 'string' },
             evidencePrompt: { type: 'string' },
-            evaluationContract: {
-              type: 'object',
-              properties: {
-                type: { type: 'string', enum: ['deterministic', 'rubric', 'hybrid'] },
-                description: { type: 'string' },
-              },
-              required: ['type', 'description'],
-            },
+            evaluationContract: EVALUATION_CONTRACT_INPUT_SCHEMA,
           },
           required: ['title', 'evaluationContract'],
         },
